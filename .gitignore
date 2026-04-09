@@ -1,0 +1,18 @@
+# Local Claude Code state (contains machine-specific paths)
+.claude/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
