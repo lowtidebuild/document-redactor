@@ -16,3 +16,13 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Spike / test artifacts — fixtures committed, output files not
+spike/out/
+tests/fixtures/generated/
+*.tsbuildinfo
+
+# Python (for tools/make-fixture.py)
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,29 @@
+{
+  "name": "document-redactor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lawyer AI Safety Prep — single HTML file, offline DOCX redactor for bilingual Korean+English contracts",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "fixture": "python3 tools/make-fixture.py",
+    "spike:docxjs": "bun spike/docxjs-spike.ts",
+    "spike:jszip": "bun spike/jszip-spike.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "docx": "^9.5.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
+  }
+}
