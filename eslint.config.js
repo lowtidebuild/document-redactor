@@ -64,7 +64,14 @@ export default [
       "mocks/**",
       "tools/**",
       "*.config.js",
+      "*.config.ts",
+      "svelte.config.js",
       "eslint.config.js",
+      // Svelte files have their own parser (svelte-check handles type
+      // + a11y linting). The network-ban is enforced on the .ts side
+      // where Svelte's <script lang="ts"> code runs anyway (imports
+      // flow through TS modules).
+      "**/*.svelte",
     ],
   },
   {

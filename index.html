@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      CSP hard enforcement (eng review lock-in #5).
+
+      `default-src 'none'` denies everything by default. We then explicitly
+      whitelist the narrowest set the single-file app actually needs:
+        - script-src 'unsafe-inline'   inline scripts injected by
+                                        vite-plugin-singlefile
+        - style-src  'unsafe-inline'   inline style blocks, same reason
+        - img-src    data:             inline data: URIs only (no CDN)
+        - font-src   data:             inline fonts only
+        - connect-src 'none'           no fetch / XHR / WebSocket / SSE
+        - form-action 'none'           no <form action> submission path
+        - frame-ancestors 'none'       cannot be iframed by third parties
+        - base-uri 'none'              cannot be rebased to load remote
+      This is the browser-level backstop for Invariants #1 and #2. Code-
+      level ESLint ban is the other half. Both must pass.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none';"
+    />
+
+    <title>document-redactor · offline DOCX redactor</title>
+    <meta
+      name="description"
+      content="Offline DOCX redactor for Korean+English contracts. Zero network, zero install, zero AI."
+    />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/ui/main.ts"></script>
+  </body>
+</html>
