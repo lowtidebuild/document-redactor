@@ -18,6 +18,7 @@
 <script lang="ts">
   import CandidatesPanel from "./CandidatesPanel.svelte";
   import DocumentPreview from "./DocumentPreview.svelte";
+  import Footer from "./Footer.svelte";
   import Sidebar from "./Sidebar.svelte";
   import Topbar from "./Topbar.svelte";
   import { appState } from "./state.svelte.ts";
@@ -51,13 +52,15 @@
   <Sidebar />
   <DocumentPreview phase={appState.phase} />
   <CandidatesPanel phase={appState.phase} />
+  <Footer />
 </div>
 
 <style>
   .app {
     display: grid;
     grid-template-columns: 260px 1fr 340px;
-    grid-template-rows: 56px 1fr;
+    /* 56px topbar / 1fr content / auto footer */
+    grid-template-rows: 56px 1fr auto;
     height: 100vh;
     max-width: 1440px;
     margin: 0 auto;

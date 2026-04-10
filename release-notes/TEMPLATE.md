@@ -38,6 +38,6 @@ Or compare this hash by eye:
 ## For the curious
 
 - **Source:** https://github.com/lowtidebuild/document-redactor
-- **License:** MIT
+- **License:** Apache 2.0
 - **Build:** Bun + Vite + Svelte 5, single-file HTML, zero network requests
 - **Invariants:** CSP `default-src 'none'`, no `fetch`/`XHR`/`WebSocket` in source (lint-enforced), 3 MB bundle cap
