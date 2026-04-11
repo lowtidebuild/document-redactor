@@ -2,14 +2,15 @@
 
 > ⚠️ **PARTIAL DRAFT — DO NOT EXECUTE** ⚠️
 >
-> This brief is **incomplete** as of 2026-04-11 (v3, after session +1). Only § 0–8
-> are written (orientation, mission, invariants, architecture, file layout,
-> framework type extensions, runner extensions, detect-all.ts pipeline). The
-> rule content proper (§ 9–14 per-category specs, § 15–18 testing / TDD /
-> verification / acceptance) is **NOT YET AUTHORED**.
+> This brief is **incomplete** as of 2026-04-12 (v4, after session +2 first half).
+> § 0–9 are written (orientation, mission, invariants, architecture, file
+> layout, framework type extensions, runner extensions, detect-all.ts pipeline,
+> and the 10 financial rules). The remaining rule content (§ 10–14 temporal /
+> entities / structural / legal / heuristics) and § 15–18 (testing / TDD /
+> verification / acceptance) are **NOT YET AUTHORED**.
 >
 > **Do NOT hand this to Codex for execution in its current state.** Codex would
-> read the file-layout section, fail to find rule specifications in § 9–14,
+> read the file-layout section, fail to find rule specifications in § 10–14,
 > and produce garbage code trying to fill in the gaps.
 >
 > **If you are Claude in a future session:** jump to the `## RESUME POINTER` section
@@ -17,8 +18,9 @@
 >
 > **If you are the user:** this file will be completed across 2–3 more Claude
 > sessions. Decisions are locked (see session log 2026-04-11-v2). The next step is
-> writing § 9–14 (the rulebook itself — 46 rule/parser/heuristic specs) followed
-> by § 15–18 (testing requirements, TDD sequence, verification, acceptance).
+> writing § 10 (temporal rules, ~500 lines), then § 11 (entities, ~700 lines),
+> then § 12–14 (structural / legal / heuristics), followed by § 15–18 (testing
+> requirements, TDD sequence, verification, acceptance).
 
 ---
 
@@ -1899,9 +1901,637 @@ These tests double as the ship gate for Phase 1 integration. If any fails, the n
 
 ---
 
+## 9. `rules/financial.ts` — 10 regex rules
+
+Ten financial detection rules covering Korean won, US dollar, foreign currencies, percentages, fractions, and label-driven amount context. All are pure regex with optional post-filters — no heuristics, no parsers. File targets ~250 lines of TypeScript + ~250 lines of tests.
+
+### 9.1 Category overview
+
+| # | id | Languages | Levels | What it catches |
+|---|---|---|---|---|
+| 1 | `financial.won-amount` | `["ko"]` | C, S, P | Korean won with 원 suffix: `50,000원`, `1000원`, `1,500.50원` |
+| 2 | `financial.won-unit` | `["ko"]` | S, P | Korean unit amounts: `1억원`, `500만원`, `3천만원`, `1조원` |
+| 3 | `financial.won-formal` | `["universal"]` | C, S, P | Formal KRW marker: `₩50,000`, `KRW 50,000,000` |
+| 4 | `financial.usd-symbol` | `["universal"]` | C, S, P | Dollar symbol: `$50,000`, `$1.99`, `$50,000.00` |
+| 5 | `financial.usd-code` | `["universal"]` | C, S, P | USD code form: `USD 50,000`, `US$ 50,000` |
+| 6 | `financial.foreign-symbol` | `["universal"]` | S, P | `€50,000`, `£1,000`, `¥10,000` |
+| 7 | `financial.foreign-code` | `["universal"]` | S, P | ISO codes: `EUR 50,000`, `GBP 1,000`, `JPY 10,000`, `CNY 50,000`, `CHF / AUD / CAD / HKD / SGD` |
+| 8 | `financial.percentage` | `["universal"]` | S, P | `15%`, `15.5%`, `15 퍼센트`, `15 프로` |
+| 9 | `financial.fraction-ko` | `["ko"]` | P | `3분의 1`, `4분의 3`, `10분의 1` |
+| 10 | `financial.amount-context-ko` | `["ko"]` | S, P | Label-driven: `금액: 1,000,000`, `보증금 5억`, `매매대금 50,000,000원` |
+
+Legend: **C** = conservative, **S** = standard, **P** = paranoid.
+
+### 9.2 Normalization assumptions (read before writing patterns)
+
+By the time a regex rule sees the text, `normalizeForMatching` has already applied the following transformations (see `src/detection/normalize.ts` for the authoritative list — do NOT re-apply these in the regex):
+
+- **Fullwidth ASCII folded to halfwidth.** `５０，０００` becomes `50,000`. `＄` becomes `$`. The regex can assume digits, commas, periods, dollar signs, and spaces are all ASCII.
+- **CJK space (U+3000) → ASCII space.** Use `\s` normally; don't worry about the CJK space.
+- **Smart quotes → ASCII quotes.** Not relevant for financial, but worth knowing.
+- **Hyphens (en-dash, em-dash, minus sign, fullwidth hyphen, etc.) → ASCII hyphen.** Not used in financial regex but worth knowing for temporal.
+- **Zero-width characters stripped.** `50\u200B,000` becomes `50,000`.
+
+**NOT normalized** (the regex must handle these as-is):
+
+- **Korean currency symbol `₩` (U+20A9).** Passes through unchanged. The `financial.won-formal` rule matches it literally.
+- **Euro `€` (U+20AC), pound `£` (U+00A3), yen `¥` (U+00A5).** Pass through unchanged. The `financial.foreign-symbol` rule matches them literally.
+- **Korean syllables.** Passed through as whatever codepoints the input had. **The rules below assume the input is NFC-composed** (single-codepoint Hangul syllables), which is how Word and all modern editors emit Korean by default. Jamo-decomposed input (e.g., `원` instead of `원`) is an acknowledged edge case that these rules do not handle; Phase 0's characterization fixture is all NFC, so the invariant holds for the existing test suite. A future hardening phase may add jamo handling, but it is out of scope for Phase 1.
+- **Korean number words (만, 억, 조, 천).** The regex matches them as literal UTF-16 sequences. They are not normalized away.
+
+### 9.3 Full file content (`rules/financial.ts`)
+
+Put this EXACTLY into `src/detection/rules/financial.ts`:
+
+```typescript
+/**
+ * Financial category — money amounts, percentages, fractions.
+ *
+ * Ten regex rules covering:
+ *
+ *   1. Korean won with 원 suffix (digit form)
+ *   2. Korean won with unit word (억/만/천/조)
+ *   3. Formal KRW marker (₩ / KRW)
+ *   4. US dollar symbol ($)
+ *   5. US dollar code (USD / US$)
+ *   6. Foreign currency symbol (€ £ ¥)
+ *   7. Foreign currency code (EUR GBP JPY CNY ...)
+ *   8. Percentage (% 퍼센트 프로)
+ *   9. Korean fraction (N분의 M)
+ *  10. Label-driven amount context (금액:, 보증금, ...)
+ *
+ * All rules return `confidence: 1.0` via the standard runner (see
+ * `runRegexPhase`). Two post-filters reject out-of-range values: KRW amounts
+ * above ~999조원 (likely typos or account numbers) and percentages above
+ * 10,000% (almost certainly not a valid financial claim).
+ *
+ * See:
+ *   - docs/phases/phase-1-rulebook.md § 9 — authoritative rule specs
+ *   - docs/RULES_GUIDE.md § 2.2 — category boundary resolution
+ *   - docs/RULES_GUIDE.md § 7 — ReDoS checklist (every pattern in this file
+ *     was audited against the 50ms budget)
+ *
+ * NORMALIZATION: this file assumes `normalizeForMatching` has already folded
+ * fullwidth digits and punctuation to ASCII. Do NOT match `０`, `，`, `．` —
+ * they are already `0`, `,`, `.` by the time the regex sees them. See
+ * src/detection/normalize.ts and § 9.2 of the phase-1 brief.
+ */
+
+import type { PostFilter, RegexRule } from "../_framework/types.js";
+
+/**
+ * Post-filter for `financial.won-amount`. Rejects values above 999조원
+ * (999,999,999,999,999) as they are overwhelmingly typos, account numbers,
+ * or transcription noise rather than real money amounts. Values below 1원
+ * cannot match the regex (which requires at least one digit).
+ *
+ * Pure function: extracts digits, converts to Number, bounds-checks.
+ */
+const wonAmountInRange: PostFilter = (normalizedMatch) => {
+  const digits = normalizedMatch.replace(/[^\d]/g, "");
+  if (digits.length === 0) return false;
+  const n = Number(digits);
+  return Number.isFinite(n) && n > 0 && n <= 999_999_999_999_999;
+};
+
+/**
+ * Post-filter for `financial.percentage`. Rejects values above 10,000% as
+ * almost certainly not a valid financial claim (growth rates, ROIs, and
+ * other extreme percentages used in real contracts top out well below this).
+ * Values at or below 0 are also rejected — negative percentages appear in
+ * contracts but with a leading minus sign, which this regex does not match
+ * to begin with.
+ */
+const percentageInRange: PostFilter = (normalizedMatch) => {
+  const m = normalizedMatch.match(/\d+(?:\.\d+)?/);
+  if (!m) return false;
+  const n = Number(m[0]);
+  return Number.isFinite(n) && n >= 0 && n <= 10_000;
+};
+
+export const FINANCIAL = [
+  {
+    id: "financial.won-amount",
+    category: "financial",
+    subcategory: "won-amount",
+    pattern:
+      /(?<![\d.])(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*원/g,
+    postFilter: wonAmountInRange,
+    levels: ["conservative", "standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean won with 원 suffix, comma-separated or bare digit form",
+  },
+  {
+    id: "financial.won-unit",
+    category: "financial",
+    subcategory: "won-unit",
+    pattern:
+      /(?<!\d)\d+(?:,\d{3})*(?:\.\d+)?\s*(?:천만|천억|천|만|억|조)\s*원/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean won with unit word (천/만/억/조 + 원), e.g., '3천만원', '1억원'",
+  },
+  {
+    id: "financial.won-formal",
+    category: "financial",
+    subcategory: "won-formal",
+    pattern:
+      /(?<![A-Za-z])(?:₩\s*|KRW\s+)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g,
+    levels: ["conservative", "standard", "paranoid"],
+    languages: ["universal"],
+    description:
+      "Formal Korean won marker (₩ or KRW) followed by digit amount",
+  },
+  {
+    id: "financial.usd-symbol",
+    category: "financial",
+    subcategory: "usd-symbol",
+    pattern:
+      /(?<![A-Za-z\d])\$\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/g,
+    levels: ["conservative", "standard", "paranoid"],
+    languages: ["universal"],
+    description:
+      "US dollar with $ prefix, e.g., '$50,000', '$1.99', '$100.00'",
+  },
+  {
+    id: "financial.usd-code",
+    category: "financial",
+    subcategory: "usd-code",
+    pattern:
+      /(?<![A-Za-z])(?:USD\s+|US\$\s*)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/g,
+    levels: ["conservative", "standard", "paranoid"],
+    languages: ["universal"],
+    description:
+      "US dollar with ISO code (USD) or US$ prefix, e.g., 'USD 50,000', 'US$ 100'",
+  },
+  {
+    id: "financial.foreign-symbol",
+    category: "financial",
+    subcategory: "foreign-symbol",
+    pattern:
+      /(?<![A-Za-z\d])[€£¥]\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/g,
+    levels: ["standard", "paranoid"],
+    languages: ["universal"],
+    description:
+      "Foreign currency symbol (€, £, ¥) followed by digit amount",
+  },
+  {
+    id: "financial.foreign-code",
+    category: "financial",
+    subcategory: "foreign-code",
+    pattern:
+      /(?<![A-Za-z])(?:EUR|GBP|JPY|CNY|CHF|AUD|CAD|HKD|SGD)\s+(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/g,
+    levels: ["standard", "paranoid"],
+    languages: ["universal"],
+    description:
+      "Foreign currency ISO code (EUR/GBP/JPY/CNY/CHF/AUD/CAD/HKD/SGD) followed by amount",
+  },
+  {
+    id: "financial.percentage",
+    category: "financial",
+    subcategory: "percentage",
+    pattern: /(?<!\d)\d+(?:\.\d+)?\s*(?:%|퍼센트|프로)/g,
+    postFilter: percentageInRange,
+    levels: ["standard", "paranoid"],
+    languages: ["universal"],
+    description:
+      "Percentage, numeric form with %, 퍼센트, or 프로 suffix",
+  },
+  {
+    id: "financial.fraction-ko",
+    category: "financial",
+    subcategory: "fraction-ko",
+    pattern: /(?<!\d)\d+\s*분의\s*\d+(?!\d)/g,
+    levels: ["paranoid"],
+    languages: ["ko"],
+    description: "Korean fraction notation 'N분의 M', e.g., '3분의 1'",
+  },
+  {
+    id: "financial.amount-context-ko",
+    category: "financial",
+    subcategory: "amount-context-ko",
+    pattern:
+      /(?<=(?:금액|총액|보증금|매매대금|계약금|잔금|지급액|수수료|단가|대금)\s*[:：]?\s*)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:원|만원|억원|천원))?/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Digit amount preceded by a Korean financial label (금액/총액/보증금/...)",
+  },
+] as const satisfies readonly RegexRule[];
+```
+
+### 9.4 Per-rule deep dive
+
+#### 9.4.1 `financial.won-amount`
+
+**Pattern:** `(?<![\d.])(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*원`
+
+**Matches (positive, minimum 3):**
+- `"50,000원"` → captures `50,000원`
+- `"1000원"` (no commas, short form) → captures `1000원`
+- `"1,500.50원"` (decimal) → captures `1,500.50원`
+
+**Variants (minimum 3):**
+- `"50000원"` (no commas, long bare form)
+- `"50,000  원"` (multiple spaces)
+- `"50,000원입니다"` (followed by Korean particle — match is `50,000원`, leaves `입니다`)
+
+**Boundaries (minimum 3):**
+- Start of string: `"50,000원 is the total"` → matches at offset 0
+- End of string: `"Total: 50,000원"` → matches at end
+- Punctuation adjacent: `"(50,000원)"` → matches `50,000원`, leaves parens
+
+**Rejects (must NOT match, minimum 3):**
+- `"2024년"` (year suffix 년, not 원 currency) — no match
+- `"1500000000000000000원"` (post-filter rejects as > 999조원)
+- `"원"` alone (no digit prefix) — no match
+
+**ReDoS:** benign. The repetition `(?:,\d{3})+` is linear — each `,\d{3}` consumes 4 characters deterministically. The optional `(?:\.\d+)?` is also linear. No nested quantifiers. Passes the 50ms fuzz budget easily.
+
+**Known false positive:** `"1.5원칙"` (version 1.5 principle — 원칙 means "principle" with 원 as first syllable of a compound word). The regex matches `1.5원` and leaves `칙`. Documented limitation; a future hygiene pass may add a lookahead blacklist for common 원-prefixed compound words (원칙, 원인, 원래, 원본, 원자, 원점, 원문, 원어, 원고, 원리, 원유, 원자력, ...). Phase 1 does NOT add this blacklist.
+
+**Level rationale:** Conservative tier because the 원 suffix makes this one of the most unambiguous financial signals in Korean text. Contracts that mention any won amount should always have these redacted regardless of tier.
+
+#### 9.4.2 `financial.won-unit`
+
+**Pattern:** `(?<!\d)\d+(?:,\d{3})*(?:\.\d+)?\s*(?:천만|천억|천|만|억|조)\s*원`
+
+**Alternation order matters.** `천만` and `천억` MUST come before `천` in the alternation list. The regex engine tries alternatives left-to-right and uses the first match, so with `(?:천|천만)` the engine would match the bare `천` and never try `천만`, producing wrong candidate boundaries on text like `"3천만원"`. This is a load-bearing ordering decision, NOT a cosmetic one.
+
+**Matches:**
+- `"1억원"` → `1억원`
+- `"500만원"` → `500만원`
+- `"3천만원"` → `3천만원`
+- `"1조원"` → `1조원`
+- `"1,000만원"` (comma inside digit block) → `1,000만원`
+
+**Variants:**
+- `"500 만원"` (space between digit and unit)
+- `"500만 원"` (space between unit and 원)
+- `"500 만 원"` (spaces both sides)
+
+**Rejects:**
+- `"500만"` (no 원 suffix) — no match
+- `"천만원"` (no digit prefix) — no match
+- `"만원"` alone — no match
+
+**Level rationale:** Standard + Paranoid but NOT Conservative. The unit-word form overlaps with calendrical phrases like `"1억 년 전"` (100 million years ago); the required 원 suffix prevents most false positives, but conservative tier errs on the side of zero-false-positive rules.
+
+**ReDoS:** benign.
+
+#### 9.4.3 `financial.won-formal`
+
+**Pattern:** `(?<![A-Za-z])(?:₩\s*|KRW\s+)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?`
+
+**Matches:**
+- `"₩50,000"` → `₩50,000`
+- `"₩ 50,000"` (space after ₩) → `₩ 50,000`
+- `"KRW 50,000,000"` → `KRW 50,000,000`
+- `"KRW 1000"` (no commas) → `KRW 1000`
+
+**Boundaries:**
+- Left boundary `(?<![A-Za-z])` rejects `"FOOKRW 50,000"` — the `K` of `KRW` has `O` before it (letter), so the negative lookbehind fails. No match. Prevents matching inside identifiers.
+
+**Rejects:**
+- `"KRW"` alone — no digits
+- `"₩"` alone — no digits
+- `"krw 50,000"` lowercase — pattern is case-sensitive (no `i` flag), so lowercase does not match. Intentional: lowercase `krw` in a contract is extremely rare and likely noise.
+
+**Language rationale:** `"universal"` because `₩` and `KRW` appear in English-language documents describing Korean transactions. A purely-English contract between a US buyer and Korean seller may use `KRW 50,000,000` without any Korean text elsewhere.
+
+**ReDoS:** benign.
+
+#### 9.4.4 `financial.usd-symbol`
+
+**Pattern:** `(?<![A-Za-z\d])\$\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`
+
+**Decimal digit limit of `{1,2}`.** USD is always 2-decimal currency. Allowing arbitrary decimals (`\.\d+`) would let `$100.0000001` match, which is suspicious for money. Cap at 2.
+
+**Matches:**
+- `"$50,000"` → `$50,000`
+- `"$1.99"` → `$1.99`
+- `"$100.00"` → `$100.00`
+- `"$0.50"` → `$0.50`
+- `"$50000"` (no commas) → `$50000`
+
+**Variants:**
+- `"$ 50,000"` (space after `$`)
+- `"$50,000.00"` (commas and decimals)
+
+**Boundaries:**
+- Left boundary `(?<![A-Za-z\d])` rejects `"US$100"` — the `$` has `S` before it, which is a letter. That match is caught by `usd-code` instead. Prevents double-counting across the two rules.
+
+**Rejects:**
+- `"US$100"` (caught by `usd-code`, not `usd-symbol`)
+- `"$"` alone (no digits)
+
+**ReDoS:** benign.
+
+#### 9.4.5 `financial.usd-code`
+
+**Pattern:** `(?<![A-Za-z])(?:USD\s+|US\$\s*)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`
+
+**Matches:**
+- `"USD 50,000"` → `USD 50,000`
+- `"USD 1,000,000.00"` → full match
+- `"US$ 100"` → `US$ 100`
+- `"US$100"` (no space) → `US$100`
+
+**Variants:**
+- `"USD   50,000"` (extra whitespace)
+- `"usd 50,000"` lowercase — pattern is case-sensitive, does not match. Intentional.
+
+**Rule interaction:** `"US$100"` matches here (via the `US\$` branch) and does NOT match `usd-symbol` (which requires no letter before `$`). No double-counting.
+
+**Rejects:**
+- `"USD"` alone — no digits
+- `"US$"` alone — no digits
+
+**Acceptable false positive:** `"AUDIT USD 100"` — the character directly before `U` is a space, not a letter, so lookbehind passes. Matches `USD 100`. This is CORRECT behavior: even inside the phrase `"AUDIT USD 100"`, the substring `USD 100` is a legitimate money amount and should be redacted.
+
+**ReDoS:** benign.
+
+#### 9.4.6 `financial.foreign-symbol`
+
+**Pattern:** `(?<![A-Za-z\d])[€£¥]\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`
+
+**Matches:**
+- `"€50,000"` → `€50,000`
+- `"£1,000"` → `£1,000`
+- `"¥10,000"` → `¥10,000`
+- `"€ 50.00"` (space after symbol, 2 decimals)
+
+**Language rationale:** `"universal"` — these symbols appear in documents of any language.
+
+**Note on yen vs yuan.** The symbol `¥` is used for both JPY and CNY historically. In modern practice, CNY uses `元` or `¥` depending on context. This rule catches the symbol `¥` without disambiguating the currency — downstream redaction does not need to know which. The ISO-code form `CNY 50,000` is caught by `foreign-code`.
+
+**Rejects:**
+- Chinese `元` character alone — not in the character class `[€£¥]`, so not matched. Acknowledged limitation; a future hygiene pass may add `元`.
+- `¥` alone — no digits, no match.
+
+**ReDoS:** benign.
+
+#### 9.4.7 `financial.foreign-code`
+
+**Pattern:** `(?<![A-Za-z])(?:EUR|GBP|JPY|CNY|CHF|AUD|CAD|HKD|SGD)\s+(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`
+
+**Currency code list:** 9 major codes covering Europe (EUR, GBP, CHF), Asia-Pacific (JPY, CNY, HKD, SGD), and Commonwealth (AUD, CAD). Excluded: SEK, NOK, DKK, NZD, INR, BRL, MXN, RUB, ZAR, KRW (KRW is caught by `won-formal`). A future hygiene pass may extend the list; Phase 1 targets the 9 most common in Korean–English cross-border contracts.
+
+**Required space after code:** `\s+` not `\s*`. Reason: `EUR50` is almost always a concatenated identifier (e.g., product code), not a currency amount. Requiring at least one space after the code eliminates most such false positives.
+
+**Matches:**
+- `"EUR 50,000"` → `EUR 50,000`
+- `"GBP 1,000"` → `GBP 1,000`
+- `"JPY 10,000"` → `JPY 10,000`
+- `"CNY 50,000"` → `CNY 50,000`
+
+**Rejects:**
+- `"EUR50"` (no space, likely product code) — no match
+- `"EUROPE 50"` — the engine tries `EUR` at position 0, then requires `\s+`, but the next character is `O`, not whitespace. Fails all 9 code alternatives. No match overall. Correct.
+- `"EUR"` alone — no match
+
+**ReDoS:** benign.
+
+#### 9.4.8 `financial.percentage`
+
+**Pattern:** `(?<!\d)\d+(?:\.\d+)?\s*(?:%|퍼센트|프로)`
+
+**Matches:**
+- `"15%"` → `15%`
+- `"15.5%"` → `15.5%`
+- `"15 %"` (space) → `15 %`
+- `"15퍼센트"` → `15퍼센트`
+- `"15 퍼센트"` (space) → `15 퍼센트`
+- `"15 프로"` → `15 프로`
+
+**Boundaries:**
+- `(?<!\d)` prevents `"2015%"` from being interpreted as `015%` starting at position 1. With the lookbehind, the engine starts at position 0 and matches `2015%` as a single number.
+
+**Rejects:**
+- `"15개"` (15 pieces) — no `%` or percentage word
+- `"%"` alone — no digits
+- `"15000%"` → matches regex, post-filter rejects (> 10,000%)
+- `"0.00001%"` → matches regex, post-filter accepts (0 ≤ 0.00001 ≤ 10,000)
+
+**Acceptable false positive:** `"버전 5%"` could match `5%`, but this is rare outside informal text and the downstream redactor handles it safely (worst case: the `5%` is redacted when it was just informational).
+
+**ReDoS:** benign.
+
+#### 9.4.9 `financial.fraction-ko`
+
+**Pattern:** `(?<!\d)\d+\s*분의\s*\d+(?!\d)`
+
+**Matches:**
+- `"3분의 1"` → `3분의 1`
+- `"3분의1"` (no space) → `3분의1`
+- `"100분의 20"` → `100분의 20`
+
+**Boundaries:**
+- `(?<!\d)` prevents matching mid-number
+- `(?!\d)` prevents capturing only part of a trailing number (on `"3분의 12"`, the engine correctly matches `3분의 12`, not `3분의 1`)
+
+**Rejects:**
+- `"3분간"` (3 minutes) — required `분의`, not `분간`
+- `"분의"` alone — no digits
+- `"1/3"` — not the Korean fraction form, not matched (a future universal-fraction rule may catch this)
+
+**Level rationale:** Paranoid only. Fractions are rarely redaction targets in contracts — they usually denote shares or ownership ratios that are legitimate content, not PII.
+
+**ReDoS:** benign.
+
+#### 9.4.10 `financial.amount-context-ko`
+
+**Pattern:** `(?<=(?:금액|총액|보증금|매매대금|계약금|잔금|지급액|수수료|단가|대금)\s*[:：]?\s*)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:원|만원|억원|천원))?`
+
+**Variable-length lookbehind:** ES2018+ feature. Supported in Node 18+ and all modern browsers. The tsconfig/vite target is ES2022, so this is fine. No polyfill needed.
+
+**Label list:** 10 Korean financial-context nouns. NOT exhaustive by design — adding every possible label would be a maintenance burden and a slippery slope to hardcoded-entity-names (RULES_GUIDE § 12.2 anti-pattern). These 10 cover the overwhelming majority of labeled amounts in Korean contracts. Adding new labels in a future hygiene phase is cheap (just append to the alternation).
+
+**Matches:**
+- `"금액: 1,000,000"` → captures only `1,000,000` (label consumed by lookbehind)
+- `"금액 5억"` (no colon, with Korean unit) → captures `5억`
+- `"보증금: 50,000,000원"` → captures `50,000,000원`
+- `"매매대금 100,000,000"` → captures `100,000,000`
+
+**Rejects:**
+- `"금액"` alone (no following digit) — no match
+- `"1,000,000"` (no label) — no match
+- `"시간 30"` (label `시간` not in the approved list) — no match
+
+**Interaction with won-amount:** `"보증금: 50,000,000원"` is matched by BOTH this rule (which captures the digit portion including the optional 원 suffix) AND `won-amount` (which captures `50,000,000원`). Both emit candidates. Dedup happens later in `buildAllTargetsFromZip` on identical text. Since both captures include the trailing `원`, the strings are identical and the Set dedup collapses them to one target.
+
+**ReDoS consideration:** variable-length lookbehind has higher cost than fixed-length. Worst case: the engine scans backwards up to `max(label_length) + punctuation + whitespace` characters. That is bounded — the longest label `매매대금` is 4 characters, plus colon, plus a few spaces. Passes the 50ms budget.
+
+**Level rationale:** Standard + Paranoid. The label requirement makes it very low-false-positive, but it is NOT Conservative because the label list is inherently incomplete — a real contract could use a label not in the list and this rule would miss it, which means `conservative` (zero-miss tier for its scope) would need to be broader.
+
+### 9.5 Test file specification (`rules/financial.test.ts`)
+
+Create `src/detection/rules/financial.test.ts`. Per RULES_GUIDE § 8.1, minimum per-rule test set is 13 cases (3 positive, 3 variants, 3 boundary, 3 reject, 1 ReDoS adversarial). Ten rules × 13 tests = **130 tests minimum**. Target ~140 tests to allow a few extras per rule for tricky edge cases (`won-amount` has 원-compound-word ambiguity; `amount-context-ko` has variable-length lookbehind edge cases worth explicit coverage).
+
+**Organization:**
+
+```typescript
+import { describe, expect, it } from "vitest";
+
+import { runRegexPhase } from "../_framework/runner.js";
+import type { RegexRule } from "../_framework/types.js";
+
+import { FINANCIAL } from "./financial.js";
+
+/** Helper: locate a rule by subcategory so tests don't break if array order changes. */
+function findRule(subcategory: string): RegexRule {
+  const rule = FINANCIAL.find((r) => r.subcategory === subcategory);
+  if (!rule) throw new Error(`Rule not found: ${subcategory}`);
+  return rule;
+}
+
+/** Helper: run one rule on one input at level "paranoid" and return the match texts. */
+function matchOne(subcategory: string, text: string): string[] {
+  const rule = findRule(subcategory);
+  return runRegexPhase(text, "paranoid", [rule]).map((c) => c.text);
+}
+
+describe("FINANCIAL registry", () => {
+  it("exports exactly 10 rules", () => {
+    expect(FINANCIAL).toHaveLength(10);
+  });
+
+  it("every rule id starts with 'financial.'", () => {
+    for (const rule of FINANCIAL) {
+      expect(rule.id.startsWith("financial.")).toBe(true);
+    }
+  });
+
+  it("every rule pattern has the 'g' flag", () => {
+    for (const rule of FINANCIAL) {
+      expect(rule.pattern.flags).toContain("g");
+    }
+  });
+
+  it("every rule has a non-empty description", () => {
+    for (const rule of FINANCIAL) {
+      expect(rule.description.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("financial.won-amount", () => {
+  it("matches a comma-separated amount", () => {
+    expect(matchOne("won-amount", "50,000원")).toEqual(["50,000원"]);
+  });
+
+  it("matches a bare-digit amount without commas", () => {
+    expect(matchOne("won-amount", "1000원")).toEqual(["1000원"]);
+  });
+
+  it("matches an amount with decimal", () => {
+    expect(matchOne("won-amount", "1,500.50원")).toEqual(["1,500.50원"]);
+  });
+
+  // ... 10 more tests per § 9.4.1 (variants, boundaries, rejects, ReDoS)
+});
+
+// ... one describe block per rule, 9 more
+```
+
+**Quality rubric (per RULES_GUIDE § 8.3).** Every rule's test block must earn **★★★** (3 stars):
+
+- ★ 3 positive matches covering the rule's stated purpose
+- ★ 3 variant matches covering the normalization surface (whitespace, comma presence, decimal, unit word placement)
+- ★ 3 rejects covering the top false-positive risks identified in § 9.4
+
+Rules that earn fewer than 3 stars do not ship.
+
+**Test case naming:** use behavior-first describe titles, e.g., `it("matches a bare-digit amount without commas")`, NOT symbol-first (`it("tests FINANCIAL[0]")`). The behavior description is what future contributors will read when the test fails.
+
+**ReDoS adversarial test per rule.** Include one test per rule that runs the pattern against a 10KB pathological input drawn from the rule's character class. Example for `won-amount`:
+
+```typescript
+it("is ReDoS-safe on pathological comma input", () => {
+  const input = "1" + ",000".repeat(2500) + "원"; // ~10KB
+  const start = Date.now();
+  const matches = matchOne("won-amount", input);
+  const elapsed = Date.now() - start;
+  expect(elapsed).toBeLessThan(50); // 50ms budget per RULES_GUIDE § 7
+  // The match itself is optional — the test is about not hanging.
+  void matches;
+});
+```
+
+The dedicated `_framework/redos-guard.test.ts` fuzz test already covers this category-wide, but per-rule smoke tests catch regressions faster when an individual rule is tweaked.
+
+### 9.6 Registry integration
+
+Extend `src/detection/_framework/registry.ts` to include FINANCIAL rules in `ALL_REGEX_RULES`. The diff:
+
+```typescript
+// Before (runner-extension commit — § 7.9):
+import { IDENTIFIERS } from "../rules/identifiers.js";
+// ... other imports
+export const ALL_REGEX_RULES: readonly RegexRule[] = [
+  ...IDENTIFIERS,
+  // Phase 1 follow-up commits append:
+  //   ...FINANCIAL (§ 9)
+  //   ...TEMPORAL  (§ 10)
+  //   ...ENTITIES  (§ 11)
+  //   ...LEGAL     (§ 13)
+] as const;
+
+// After (§ 9 commit):
+import { IDENTIFIERS } from "../rules/identifiers.js";
+import { FINANCIAL } from "../rules/financial.js";
+// ... other imports
+export const ALL_REGEX_RULES: readonly RegexRule[] = [
+  ...IDENTIFIERS,
+  ...FINANCIAL,
+  // Phase 1 follow-up commits append:
+  //   ...TEMPORAL  (§ 10)
+  //   ...ENTITIES  (§ 11)
+  //   ...LEGAL     (§ 13)
+] as const;
+```
+
+The registry's `verifyRegistry()` function (Phase 0, unchanged) runs at module load and validates:
+
+- All `financial.*` ids are unique (no collision with identifier ids)
+- All patterns have the `g` flag
+- All `levels` and `languages` arrays are non-empty
+- All descriptions are non-empty
+- All ids start with `financial.` and end with their `subcategory`
+
+If any of these fail, the import throws. **Do not catch this error.** Fix the rule definition and re-run. The failure surfaces at test discovery time, which is the earliest possible point — exactly the fail-fast semantics Phase 0 § 11 chose.
+
+### 9.7 Acceptance checklist for § 9
+
+Before committing the financial rules, verify every item:
+
+- [ ] `src/detection/rules/financial.ts` exists and exports `FINANCIAL: readonly RegexRule[]`
+- [ ] `FINANCIAL.length === 10`
+- [ ] Every rule's id starts with `"financial."`
+- [ ] Every rule has `category: "financial"`
+- [ ] Every rule's pattern has the `g` flag
+- [ ] Two rules (`won-amount`, `percentage`) have post-filters; the other eight do not
+- [ ] `wonAmountInRange` rejects values above 999,999,999,999,999 and values at or below 0
+- [ ] `percentageInRange` rejects values above 10,000 and below 0
+- [ ] `rules/financial.test.ts` has ≥ 130 tests, all passing
+- [ ] `rules/financial.test.ts` exercises all 10 rules (no orphan rule without a describe block)
+- [ ] Every describe block earns ★★★ on the quality rubric
+- [ ] Registry update: `ALL_REGEX_RULES` includes `...FINANCIAL` immediately after `...IDENTIFIERS`
+- [ ] Registry verification passes at module load (no duplicate ids, no malformed rules)
+- [ ] `bun run test src/detection/detect-pii.characterization.test.ts` still passes byte-for-byte — financial rules do not affect identifier output because they have a different category and disjoint patterns
+- [ ] `bun run test src/detection/detect-pii.integration.test.ts` still passes
+- [ ] `bun run test` overall test count increases by ≥ 130 (financial tests) + 4 (registry tests) = ≥ 134 in this commit
+- [ ] ReDoS guard fuzz passes for all 10 financial rules (`bun run test src/detection/_framework/redos-guard.test.ts` with the new rules registered)
+- [ ] No new npm dependencies added
+- [ ] No edits to `src/detection/patterns.ts`, `detect-pii.ts`, `detect-pii.characterization.test.ts`, `detect-pii.integration.test.ts`, `detect-pii.test.ts`, or any Phase 0 file other than `registry.ts`
+
+---
+
 ## RESUME POINTER (for Claude in the next session)
 
-**Status as of 2026-04-11 v3 (session +1 complete):** § 0–8 written. § 9–18 pending.
+**Status as of 2026-04-12 v4 (session +2 first half):** § 0–9 written. § 10–18 pending.
 
 ### What is already written (do NOT rewrite)
 
@@ -1914,17 +2544,18 @@ These tests double as the ship gate for Phase 1 integration. If any fails, the n
 - **§ 6** — Type extensions: confirms Phase 1 adds ZERO new exports to `types.ts`, enumerates the 10 Phase 0 exports, explains where each non-`types.ts` type lives (`runner.ts` / `detect-all.ts` / `engine.ts`), specs 3 new type-test assertions appended to `types.test.ts`, verification command that `git diff 187b7f8 -- src/detection/_framework/types.ts` is empty
 - **§ 7** — Runner extensions: top-of-file JSDoc with ASCII diagram (authoritative copy of § 4.1), exact TypeScript for `shouldRunForLanguage` helper, `PhaseOptions` interface, `runRegexPhase` extended signature with private `runRegexPhaseOnMap` helper (Phase 0 body preserved), `runStructuralPhase` + private OnMap helper, `runHeuristicPhase` + private OnMap helper, `RunAllResult` / `RunAllOptions` / `runAllPhases` orchestrator, `registry.ts` diff to add `ALL_STRUCTURAL_PARSERS` + `ALL_HEURISTICS`, empty-array scaffolding for `rules/structural/index.ts` + `rules/heuristics/index.ts`, complete 44-test specification for `runner.test.ts` additions (groups A–E), 14-item acceptance checklist
 - **§ 8** — `detect-all.ts` pipeline: public surface (8 exports), complete file content (~200 lines of TypeScript with full JSDoc), `engine.ts` `Analysis` shape extension contract with `NonPiiCandidate` interface, migration rules for `aggregatePii` → `aggregateAll` with ruleId-prefix partitioning, one new `engine.test.ts` test, 50-test specification for `detect-all.test.ts` (groups 1–4), 10-test specification for `detect-all.integration.test.ts`, 15-item acceptance checklist
+- **§ 9** — `rules/financial.ts`: 10 regex rules (won-amount, won-unit, won-formal, usd-symbol, usd-code, foreign-symbol, foreign-code, percentage, fraction-ko, amount-context-ko); normalization assumption guide; complete file content with two post-filter helpers (wonAmountInRange, percentageInRange); per-rule deep dive for each of the 10 rules covering matches/variants/boundaries/rejects/ReDoS/level-rationale/known-false-positives; 130-test minimum plan with ★★★ quality rubric; `registry.ts` diff; 18-item acceptance checklist
 
 ### What is pending (write in this order, across future sessions)
 
-Each section estimate is rough. Total pending: ~4050 lines (§ 6–8 complete, approximately 1250 lines added in session +1).
+Each section estimate is rough. Total pending: ~3350 lines (§ 6–9 complete, approximately 2150 lines added across sessions +1 and +2).
 
 | § | Content | Est. lines | Order |
 |---|---|---:|---:|
 | ~~6~~ | ~~Type extensions in `_framework/types.ts`~~ — **DONE session +1** | ~150 | ✓ |
 | ~~7~~ | ~~Runner extensions — `runStructuralPhase`, `runHeuristicPhase`, `runAllPhases`, optional `{ language }` param~~ — **DONE session +1** | ~500 | ✓ |
 | ~~8~~ | ~~`detect-all.ts` — `detectAll`, `detectAllInZip`, `buildAllTargetsFromZip`, Analysis shape extension~~ — **DONE session +1** | ~400 | ✓ |
-| 9 | `rules/financial.ts` — 10 regex rules with JSDoc + regex source + test cases embedded. Financial KRW (won-amount, won-unit, won-formal), USD (`$50,000`, `USD 50,000`), foreign (EUR, JPY, GBP, CNY), percentage, fraction (3분의 1), context scanner. | ~600 | Session +2 |
+| ~~9~~ | ~~`rules/financial.ts` — 10 regex rules (KRW × 3, USD × 2, foreign × 2, percentage, fraction, context scanner)~~ — **DONE session +2** | ~700 | ✓ |
 | 10 | `rules/temporal.ts` — 8 regex rules. Korean date (2024년 3월 15일, 2024.3.15), Korean short date, Korean date range, ISO date, English date, Korean duration (3년간, 6개월, 90일), English duration, temporal context scanner. | ~500 | Session +2 |
 | 11 | `rules/entities.ts` — 12 regex rules. Korean corporate suffix (주식회사 X / X 주식회사 / (주)X), Korean legal forms (유한회사, 합자회사, 사단법인), Korean title+name (대표이사 김철수, 이사 박영희), English corporate suffix (Corp/Inc/LLC/Ltd/Co), English legal forms (GmbH/S.A./NV/PLC/Pty), English title+name (Mr./Dr./CEO + Name), Korean honorifics, identity context scanner. | ~700 | Session +2 |
 | 12 | `rules/structural/` — 5 parsers. Each parser has its own .ts file with StructuralParser implementation + top-of-file JSDoc with rationale. definition-section (Korean + English), signature-block (By:, 이름:, 대표이사), party-declaration (first-para scan), recitals (WHEREAS, 전문), header-block (title, execution date, document number). Plus `index.ts` re-exporting `ALL_STRUCTURAL_PARSERS`. | ~900 | Session +3 |
@@ -1980,19 +2611,19 @@ Phase 1 brief does NOT address UI. It only ensures `engine.ts` adds `nonPiiCandi
 
 ### Next session startup checklist
 
-1. Open this file and confirm the "PARTIAL DRAFT" warning is still at the top — it should now say "§ 0–8 written".
+1. Open this file and confirm the "PARTIAL DRAFT" warning is still at the top — it should now say "§ 0–9 written".
 2. Read `../document-redactor-private-notes/session-log-2026-04-11-v2.md` for the full review context.
-3. Read the 4 external feedback files in repo root (`ChatGPT 5.4 Pro Feedback_1.md`, `_2.md`, `Codex Feedback.md`) — these are the quality bar for rule authoring, especially for § 9–14 per-category rule drafting.
-4. Verify `git log --oneline -5` shows the session-+1 commit(s) adding § 6–8 after `e41d842 docs(phases): start phase-1 rulebook brief §0-5 (PARTIAL DRAFT)`.
+3. Read the 4 external feedback files in repo root (`ChatGPT 5.4 Pro Feedback_1.md`, `_2.md`, `Codex Feedback.md`) — these are the quality bar for rule authoring, especially for § 10–14 per-category rule drafting.
+4. Verify `git log --oneline -6` shows the session-+1 and session-+2 commits adding § 6–9 after `e41d842 docs(phases): start phase-1 rulebook brief §0-5 (PARTIAL DRAFT)`.
 5. Verify `bun run test` still shows 422 passing (Phase 0 has not been executed by Codex yet — these are still the v1.0 legacy tests).
-6. Start writing § 9 (`rules/financial.ts` — 10 regex rules, ~600 lines) → § 10 (temporal, ~500) → § 11 (entities, ~700). These are the high-volume per-category sections.
-7. After each section: `wc -l docs/phases/phase-1-rulebook.md`, commit with a message like `docs(phases): phase-1 brief § 9 financial rules (partial)`.
+6. Start writing § 10 (`rules/temporal.ts` — 8 regex rules, ~500 lines) → § 11 (entities, ~700) → § 12 (structural parsers, ~900). Model § 10–11 on § 9's structure (overview table, normalization notes, full file content, per-rule deep dive, test spec, registry diff, acceptance checklist).
+7. After each section: `wc -l docs/phases/phase-1-rulebook.md`, commit with a message like `docs(phases): phase-1 brief § 10 temporal rules (partial)`.
 8. Continue across sessions until every section is written, then remove the "PARTIAL DRAFT" warning at the top as the final commit of the brief-authoring stream.
 
 ### Do NOT in future sessions
 
 - Do NOT re-run plan-eng-review on this brief. The review is complete.
-- Do NOT rewrite § 0–8. They are locked. § 6–8 in particular specify exact TypeScript — do not "improve" the signatures, rename the helpers, or refactor the option shapes. Any change of heart about the framework extension surface is a review re-opener and must go through plan-eng-review again.
+- Do NOT rewrite § 0–9. They are locked. § 6–8 specify exact TypeScript for the framework extension surface — do not "improve" the signatures, rename helpers, or refactor option shapes. § 9 specifies exact regex sources for the 10 financial rules — do not "tune" them without ReDoS re-audit and a review re-opener. Any change of heart about any of these is a review re-opener.
 - Do NOT hand the brief to Codex until the "PARTIAL DRAFT" warning is removed.
 - Do NOT commit Phase 1 content changes to `src/` in the same session as brief authoring. This is a doc-only stream until the brief is complete.
 - Do NOT modify the Phase 0 brief again after commit 187b7f8. It is locked for Codex execution.
