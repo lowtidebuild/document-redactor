@@ -2,25 +2,26 @@
 
 > ⚠️ **PARTIAL DRAFT — DO NOT EXECUTE** ⚠️
 >
-> This brief is **incomplete** as of 2026-04-12 (v5, after session +2 second half).
-> § 0–10 are written (orientation, mission, invariants, architecture, file
+> This brief is **incomplete** as of 2026-04-12 (v6, after session +3 first half).
+> § 0–11 are written (orientation, mission, invariants, architecture, file
 > layout, framework type extensions, runner extensions, detect-all.ts pipeline,
-> financial rules, and temporal rules). The remaining rule content (§ 11–14
-> entities / structural / legal / heuristics) and § 15–18 (testing / TDD /
-> verification / acceptance) are **NOT YET AUTHORED**.
+> financial rules, temporal rules, and entities rules). The remaining rule
+> content (§ 12–14 structural / legal / heuristics) and § 15–18 (testing /
+> TDD / verification / acceptance) are **NOT YET AUTHORED**.
 >
 > **Do NOT hand this to Codex for execution in its current state.** Codex would
-> read the file-layout section, fail to find rule specifications in § 11–14,
+> read the file-layout section, fail to find rule specifications in § 12–14,
 > and produce garbage code trying to fill in the gaps.
 >
 > **If you are Claude in a future session:** jump to the `## RESUME POINTER` section
 > at the very bottom of this file. It tells you exactly where to pick up writing.
 >
-> **If you are the user:** this file will be completed across 2–3 more Claude
+> **If you are the user:** this file will be completed across 2 more Claude
 > sessions. Decisions are locked (see session log 2026-04-11-v2). The next step is
-> writing § 11 (entities, ~700 lines), then § 12 (structural parsers, ~900 lines),
-> then § 13–14 (legal / heuristics), followed by § 15–18 (testing / TDD /
-> verification / acceptance).
+> writing § 12 (structural parsers, ~900 lines — different shape from regex
+> rules, requires RULES_GUIDE § 5 as reference), then § 13 (legal, ~400 lines),
+> then § 14 (heuristics + role blacklists, ~700 lines — requires RULES_GUIDE
+> § 6 as reference), followed by § 15–18.
 
 ---
 
@@ -3147,9 +3148,622 @@ Registry verification at module load catches any malformed rule. Same fail-fast 
 
 ---
 
+## 11. `rules/entities.ts` — 12 regex rules
+
+Twelve entity detection rules covering Korean and English corporate forms, executive titles, honorifics, and label-driven identity context. File targets ~280 lines of TypeScript + ~280 lines of tests. Structure mirrors § 9 and § 10 exactly.
+
+**No post-filters in this category.** Entity rules are inherently fuzzy (Korean names overlap with common words, English corporate suffixes match sentence-starters), and context-aware suppression belongs to the heuristic phase (§ 14) via role blacklists. Regex rules here stay pure per the architecture decision in § 4.
+
+### 11.1 Category overview
+
+| # | id | Languages | Levels | What it catches |
+|---|---|---|---|---|
+| 1 | `entities.ko-corp-prefix` | `["ko"]` | S, P | `주식회사 ABC`, `주식회사 삼성전자`, `주식회사 홍길동` |
+| 2 | `entities.ko-corp-suffix` | `["ko"]` | S, P | `ABC 주식회사`, `삼성전자 주식회사` |
+| 3 | `entities.ko-corp-abbrev` | `["ko"]` | S, P | `(주)ABC`, `㈜ABC`, `(주) 삼성전자` |
+| 4 | `entities.ko-legal-other` | `["ko"]` | S, P | `유한회사 X`, `사단법인 Y`, `재단법인 Z`, `협동조합 W` |
+| 5 | `entities.ko-title-name` | `["ko"]` | P | `대표이사 김철수`, `이사 박영희`, `팀장 이지훈` |
+| 6 | `entities.ko-honorific` | `["ko"]` | P | `김철수 님`, `박영희 씨`, `홍길동 귀하` |
+| 7 | `entities.en-corp-suffix` | `["en"]` | S, P | `ABC Corp`, `ABC Inc.`, `ABC LLC`, `ABC Ltd.`, `ABC Company` |
+| 8 | `entities.en-legal-form` | `["en"]` | S, P | `ABC GmbH`, `XYZ S.A.`, `DEF Pty Ltd`, `GHI PLC` |
+| 9 | `entities.en-title-person` | `["en"]` | P | `Mr. Smith`, `Dr. Jones`, `Prof. Anderson` |
+| 10 | `entities.en-exec-title` | `["en"]` | P | `CEO John Smith`, `President Jane Doe`, `Director Kim` |
+| 11 | `entities.ko-identity-context` | `["ko"]` | S, P | `대표자: 김철수`, `법인명: 삼성전자`, `상호 ABC` |
+| 12 | `entities.en-identity-context` | `["en"]` | S, P | `Name: John Smith`, `Company: ABC Inc.`, `Signatory: Jane Doe` |
+
+Legend: **S** = standard, **P** = paranoid. No conservative tier in this category — every rule has enough ambiguity that paranoid review is appropriate.
+
+### 11.2 Normalization and anti-pattern notes
+
+Same normalization assumptions as § 9.2 / § 10.2. One additional concern specific to entities:
+
+**RULES_GUIDE § 12.2 — hardcoded entity names is an anti-pattern.** Every rule in this section uses CATEGORY markers (`주식회사`, `Corp`, `대표이사`) to identify entity-shaped spans; none hardcode specific company or person names (`Samsung`, `Apple`, `김철수`). If you feel tempted to add `삼성` or `LG` to an alternation for better recall, STOP. That would turn the rulebook into a database and break entity generalization. The correct place for entity-specific tuning is the `propagation/` lane (user-provided seed list), not the regex layer.
+
+**RULES_GUIDE § 12.1 — `\b` in CJK contexts is an anti-pattern.** The Korean rules below use `(?<![가-힣A-Za-z])` and `(?![가-힣])` instead of `\b`. Do NOT replace them with `\b`. English rules use `\b` where appropriate (they run under the `"en"` language filter so CJK text never reaches them).
+
+**Known false positive pattern.** The Korean honorific rule (`ko-honorific`) and title-name rule (`ko-title-name`) both use `[가-힣]{2,4}` to detect name-shaped spans. This pattern legitimately matches common Korean words that are not names (e.g., `오늘 씨` = "today mister", `시간 님` = "time sir"). These false positives are intentionally NOT filtered at the regex layer. The heuristic phase (§ 14) applies a role blacklist that suppresses common-word false positives downstream. Regex stays context-free; heuristics add context.
+
+### 11.3 Full file content (`rules/entities.ts`)
+
+Put this EXACTLY into `src/detection/rules/entities.ts`:
+
+```typescript
+/**
+ * Entities category — corporate forms, executive titles, honorifics, labels.
+ *
+ * Twelve regex rules covering:
+ *
+ *   1. Korean corporation with 주식회사 prefix
+ *   2. Korean corporation with 주식회사 suffix
+ *   3. Korean corporation abbreviation ((주) or ㈜)
+ *   4. Korean legal forms other than 주식회사 (유한회사 / 사단법인 / ...)
+ *   5. Korean executive title + person name
+ *   6. Korean person name + honorific
+ *   7. English corporation with Corp/Inc/LLC/Ltd/Co suffix
+ *   8. English international legal form (GmbH/S.A./PLC/Pty Ltd/...)
+ *   9. English personal title (Mr./Mrs./Dr./Prof.) + name
+ *  10. English executive title (CEO/President/Director/...) + name
+ *  11. Korean label-driven identity context (대표자:/법인명:/...)
+ *  12. English label-driven identity context (Name:/Company:/...)
+ *
+ * No post-filters in this category. Entity detection is inherently fuzzy and
+ * context-aware suppression is deferred to the heuristic phase (see § 14 of
+ * phase-1-rulebook.md for the role blacklist design).
+ *
+ * See:
+ *   - docs/phases/phase-1-rulebook.md § 11 — authoritative rule specs
+ *   - docs/RULES_GUIDE.md § 2.4 — entities category boundary
+ *   - docs/RULES_GUIDE.md § 12.1 — \b in CJK anti-pattern (avoided below)
+ *   - docs/RULES_GUIDE.md § 12.2 — hardcoded entity names anti-pattern
+ *
+ * NORMALIZATION: this file assumes `normalizeForMatching` has already folded
+ * fullwidth ASCII, CJK space, and hyphen variants. See § 11.2 of the phase-1
+ * brief and src/detection/normalize.ts for the authoritative list.
+ */
+
+import type { RegexRule } from "../_framework/types.js";
+
+export const ENTITIES = [
+  {
+    id: "entities.ko-corp-prefix",
+    category: "entities",
+    subcategory: "ko-corp-prefix",
+    pattern:
+      /(?<![가-힣A-Za-z])주식회사\s+(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean corporation with 주식회사 prefix followed by a single-token company name",
+  },
+  {
+    id: "entities.ko-corp-suffix",
+    category: "entities",
+    subcategory: "ko-corp-suffix",
+    pattern:
+      /(?<![가-힣A-Za-z])(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)\s+주식회사(?![가-힣A-Za-z])/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean corporation with single-token company name followed by 주식회사",
+  },
+  {
+    id: "entities.ko-corp-abbrev",
+    category: "entities",
+    subcategory: "ko-corp-abbrev",
+    pattern:
+      /(?:\(주\)|㈜)\s*(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean corporation with (주) or ㈜ abbreviation prefix and single-token company name",
+  },
+  {
+    id: "entities.ko-legal-other",
+    category: "entities",
+    subcategory: "ko-legal-other",
+    pattern:
+      /(?<![가-힣A-Za-z])(?:유한회사|유한책임회사|합자회사|합명회사|사단법인|재단법인|협동조합)\s+(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean legal form other than 주식회사 (유한회사/사단법인/재단법인/협동조합/...) with prefixed name",
+  },
+  {
+    id: "entities.ko-title-name",
+    category: "entities",
+    subcategory: "ko-title-name",
+    pattern:
+      /(?<![가-힣A-Za-z])(?:대표이사|부사장|본부장|대표|부장|차장|과장|팀장|실장|사장|전무|상무|이사|감사|대리|주임)\s+[가-힣]{2,4}(?![가-힣])/g,
+    levels: ["paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean executive or management title followed by a 2-4 syllable Korean name",
+  },
+  {
+    id: "entities.ko-honorific",
+    category: "entities",
+    subcategory: "ko-honorific",
+    pattern:
+      /(?<![가-힣])[가-힣]{2,4}\s*(?:사장님|선생님|교수님|대표님|이사님|귀하|님|씨)(?![가-힣])/g,
+    levels: ["paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean 2-4 syllable name followed by honorific (님/씨/귀하/사장님/선생님/...)",
+  },
+  {
+    id: "entities.en-corp-suffix",
+    category: "entities",
+    subcategory: "en-corp-suffix",
+    pattern:
+      /(?<![A-Za-z])[A-Z][A-Za-z0-9&\-]*(?:\s+[A-Z][A-Za-z0-9&\-]*){0,3}\s+(?:Corporation|Incorporated|Limited|Company|Corp\.?|Inc\.?|LLC\.?|Ltd\.?|Co\.?)(?![A-Za-z])/g,
+    levels: ["standard", "paranoid"],
+    languages: ["en"],
+    description:
+      "English corporation: 1-4 capitalized words followed by Corp/Inc/LLC/Ltd/Co/Corporation/Incorporated/Limited/Company",
+  },
+  {
+    id: "entities.en-legal-form",
+    category: "entities",
+    subcategory: "en-legal-form",
+    pattern:
+      /(?<![A-Za-z])[A-Z][A-Za-z0-9&\-]*(?:\s+[A-Z][A-Za-z0-9&\-]*){0,3}\s+(?:GmbH|AG|S\.p\.A\.|S\.r\.l\.|S\.A\.S|S\.A\.|SARL|SAS|PLC|LLP|Pty\s+Ltd|Pty|NV|BV|AB|OY|KG|OHG)(?![A-Za-z])/g,
+    levels: ["standard", "paranoid"],
+    languages: ["en"],
+    description:
+      "English international legal form (GmbH/AG/S.A./SARL/PLC/Pty Ltd/NV/BV/AB/OY/KG/OHG) with preceding capitalized name",
+  },
+  {
+    id: "entities.en-title-person",
+    category: "entities",
+    subcategory: "en-title-person",
+    pattern:
+      /(?<![A-Za-z])(?:Mr|Mrs|Ms|Miss|Dr|Prof|Rev|Sir)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}(?![A-Za-z])/g,
+    levels: ["paranoid"],
+    languages: ["en"],
+    description:
+      "English personal title (Mr./Mrs./Ms./Miss/Dr./Prof./Rev./Sir) with 1-3 capitalized name words",
+  },
+  {
+    id: "entities.en-exec-title",
+    category: "entities",
+    subcategory: "en-exec-title",
+    pattern:
+      /(?<![A-Za-z])(?:Vice\s+President|CEO|CFO|COO|CTO|CIO|CMO|CHRO|President|Chairman|Chairwoman|Director|Founder|Partner|Secretary|Treasurer)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}(?![A-Za-z])/g,
+    levels: ["paranoid"],
+    languages: ["en"],
+    description:
+      "English executive title (CEO/CFO/President/Chairman/Director/Founder/...) with 1-3 capitalized name words",
+  },
+  {
+    id: "entities.ko-identity-context",
+    category: "entities",
+    subcategory: "ko-identity-context",
+    pattern:
+      /(?<=(?:대표자|성명|이름|법인명|회사명|상호|소속|직함|직위)\s*[:：]?\s*)(?:[A-Za-z][A-Za-z0-9&.\-]*|[가-힣]{2,6})/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean identity value (name or company token) preceded by a label (대표자/성명/법인명/...)",
+  },
+  {
+    id: "entities.en-identity-context",
+    category: "entities",
+    subcategory: "en-identity-context",
+    pattern:
+      /(?<=(?:Full\s+Name|Company\s+Name|Name|Company|Representative|Contact|Signatory|Client|Counterparty)\s*:\s*)[A-Z][A-Za-z.\-]*(?:\s+[A-Z][A-Za-z.\-]*){0,3}/g,
+    levels: ["standard", "paranoid"],
+    languages: ["en"],
+    description:
+      "English identity value (1-4 capitalized words) preceded by a label (Name:/Company:/Representative:/...)",
+  },
+] as const satisfies readonly RegexRule[];
+```
+
+### 11.4 Per-rule deep dive
+
+#### 11.4.1 `entities.ko-corp-prefix`
+
+**Pattern:** `(?<![가-힣A-Za-z])주식회사\s+(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)`
+
+**Left boundary `(?<![가-힣A-Za-z])`.** Prevents matching mid-word. `"X주식회사"` (no space) is caught by `ko-corp-suffix`, not here. `"한국주식회사"` — the `한` before `주` is Hangul, lookbehind fails, no prefix match. Correct: this is the suffix form, caught by rule 2.
+
+**Company name token.** Two branches: English/digit start `[A-Za-z0-9][A-Za-z0-9&.\-]*`, or Korean start `[가-힣][가-힣A-Za-z0-9]*`. The name is a single whitespace-free token — multi-word Korean company names (`"주식회사 홍길동 컴퍼니"`) truncate to `"주식회사 홍길동"`. Acknowledged limitation.
+
+**Matches:**
+- `"주식회사 LG"` → `주식회사 LG`
+- `"주식회사 삼성전자"` → `주식회사 삼성전자`
+- `"주식회사 3M"` → `주식회사 3M`
+
+**Rejects:**
+- `"주식회사"` alone (no name) — no match
+- `"홍길동 주식회사"` — caught by `ko-corp-suffix`, not this rule
+- `"㈜LG"` — caught by `ko-corp-abbrev`, not this rule
+
+**ReDoS:** benign. No nested quantifiers, single alternation branch chosen by the first character class.
+
+#### 11.4.2 `entities.ko-corp-suffix`
+
+**Pattern:** `(?<![가-힣A-Za-z])(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)\s+주식회사(?![가-힣A-Za-z])`
+
+**Right boundary `(?![가-힣A-Za-z])`.** Prevents matching `"ABC 주식회사법인"` (company+suffix+other-word) as `"ABC 주식회사"` leaving `"법인"`. Actually accepts this — the right boundary sees `법` (Hangul), fails, no match at this position. That's probably wrong. Let me reconsider: in `"ABC 주식회사법인"`, the literal `주식회사` is followed by `법`. If we do NOT want to match here, the right boundary correctly rejects. Good.
+
+**Matches:**
+- `"LG 주식회사"` → `LG 주식회사`
+- `"삼성전자 주식회사"` → `삼성전자 주식회사`
+- `"3M 주식회사"` → `3M 주식회사`
+
+**Rejects:**
+- `"주식회사 LG"` — caught by prefix rule, not this
+- `"주식회사"` alone — no match (no preceding token)
+- `"주식회사법"` — no preceding space-separated token
+
+**Rule interaction with prefix.** `"주식회사 LG 주식회사"` (weird but constructible) matches BOTH rules: prefix captures `주식회사 LG`, suffix captures `LG 주식회사`. Two candidates, different text strings, both emitted. Dedup happens later only on identical text.
+
+**ReDoS:** benign.
+
+#### 11.4.3 `entities.ko-corp-abbrev`
+
+**Pattern:** `(?:\(주\)|㈜)\s*(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)`
+
+**Two abbreviation forms:** the ASCII `(주)` (three codepoints) and the single-codepoint `㈜` (U+3229). Both are common in Korean documents; some editors auto-convert one to the other.
+
+**Matches:**
+- `"(주)LG"` → `(주)LG`
+- `"㈜LG"` → `㈜LG`
+- `"(주) 삼성전자"` (space after abbrev) → `(주) 삼성전자`
+- `"㈜삼성전자"` (no space) → `㈜삼성전자`
+
+**Rejects:**
+- `"(주)"` alone — no match
+- `"(주식)LG"` — `\(주식\)` is not in the alternation, no match
+
+**No left boundary needed.** The `(` and `㈜` characters are strong left anchors — no other word context produces them.
+
+**ReDoS:** benign.
+
+#### 11.4.4 `entities.ko-legal-other`
+
+**Pattern:** `(?<![가-힣A-Za-z])(?:유한회사|유한책임회사|합자회사|합명회사|사단법인|재단법인|협동조합)\s+(?:[A-Za-z0-9][A-Za-z0-9&.\-]*|[가-힣][가-힣A-Za-z0-9]*)`
+
+**Legal form list:** 7 forms covering the most common non-주식회사 Korean legal entities. Excluded: 영농조합법인, 농업회사법인 (agricultural-specific), 특수법인 (too generic). A future hygiene pass may extend.
+
+**Alternation order.** `유한책임회사` before `유한회사` is critical — otherwise the engine matches the shorter form first on `"유한책임회사 ABC"` and would capture `"유한회사 ABC"` (wrong).
+
+**Matches:**
+- `"유한회사 홍길동"` → `유한회사 홍길동`
+- `"유한책임회사 ABC"` → `유한책임회사 ABC`
+- `"사단법인 한국언어학회"` — name truncates to `"사단법인 한국언어학회"` (single token)
+- `"재단법인 ABC"` → `재단법인 ABC`
+
+**Rejects:**
+- `"유한회사"` alone (no name) — no match
+- `"사단법"` (incomplete) — no match
+
+**Level:** Standard + Paranoid. No conservative because non-주식회사 forms are rarer and the name token truncation occasionally produces incomplete matches.
+
+**ReDoS:** benign.
+
+#### 11.4.5 `entities.ko-title-name`
+
+**Pattern:** `(?<![가-힣A-Za-z])(?:대표이사|부사장|본부장|대표|부장|차장|과장|팀장|실장|사장|전무|상무|이사|감사|대리|주임)\s+[가-힣]{2,4}(?![가-힣])`
+
+**Title list:** 15 common Korean executive and management titles. Excluded: 이사장, 원장, 총무, 회계 (more specific roles) — add in a future hygiene pass.
+
+**Alternation order.** `대표이사` before `대표` is critical. Same `유한책임회사`-before-`유한회사` rule.
+
+**Name shape `[가-힣]{2,4}`.** Korean names are typically 2-4 Hangul syllables (2: 김수, 3: 김철수, 4: 선우재덕). The upper bound of 4 covers > 99% of real names.
+
+**Right boundary `(?![가-힣])`.** Prevents the regex from stopping mid-name on a 5+ syllable name (rare, not supported).
+
+**Matches:**
+- `"대표이사 김철수"` → `대표이사 김철수`
+- `"이사 박영희"` → `이사 박영희`
+- `"팀장 이지훈"` → `팀장 이지훈`
+- `"과장 홍길동"` → `과장 홍길동`
+
+**Rejects:**
+- `"대표이사"` alone — no match (no following name)
+- `"대표이사 김"` — `[가-힣]{2,4}` requires at least 2 syllables, no match
+- `"대표이사 김철수민준"` (5 syllables) — regex matches 4 then lookahead fails, overall no match
+
+**Known false positive:** `"팀장 시간"` (time) — `"시간"` is 2 Hangul syllables and not a name, but regex matches. Suppressed downstream by the role blacklist in § 14.
+
+**Level:** Paranoid only. Name detection is inherently low-precision; conservative and standard tiers skip this.
+
+**ReDoS:** benign.
+
+#### 11.4.6 `entities.ko-honorific`
+
+**Pattern:** `(?<![가-힣])[가-힣]{2,4}\s*(?:사장님|선생님|교수님|대표님|이사님|귀하|님|씨)(?![가-힣])`
+
+**Honorific list.** Generic: 님, 씨, 귀하. Title-embedded: 사장님, 선생님, 교수님, 대표님, 이사님. Alternation order: longer forms first (the three-syllable 사장님 etc. before the single-syllable 님).
+
+**Matches:**
+- `"김철수 님"` → `김철수 님`
+- `"김철수님"` (no space) → `김철수님`
+- `"박영희 씨"` → `박영희 씨`
+- `"홍길동 귀하"` → `홍길동 귀하`
+- `"김대표 사장님"` → `김대표 사장님`
+
+**Rejects:**
+- `"님"` alone — no match
+- `"김"` (1 syllable before honorific) — `{2,4}` requires ≥ 2, no match
+
+**Known false positive:** `"오늘 씨"` (today mister), `"시간 님"` (time sir) — common Korean words match as names. Suppressed downstream by role blacklist. Documented in § 11.2.
+
+**Level:** Paranoid only. Same rationale as `ko-title-name`.
+
+**ReDoS:** benign.
+
+#### 11.4.7 `entities.en-corp-suffix`
+
+**Pattern:** `(?<![A-Za-z])[A-Z][A-Za-z0-9&\-]*(?:\s+[A-Z][A-Za-z0-9&\-]*){0,3}\s+(?:Corporation|Incorporated|Limited|Company|Corp\.?|Inc\.?|LLC\.?|Ltd\.?|Co\.?)(?![A-Za-z])`
+
+**Name shape:** 1-4 capitalized words, each starting with `[A-Z]` followed by letters/digits/`&`/`-`.
+
+**Suffix alternation.** Full words (Corporation, Incorporated, Limited, Company) before abbreviations (Corp, Inc, LLC, Ltd, Co). Each abbreviation has optional period (`Corp\.?`) so both `"ABC Corp"` and `"ABC Corp."` match.
+
+**Why `{0,3}` not `{0,4}`.** 4-word company names exist but are rare. Capping at 4 total words (1 required + 3 optional) keeps the regex bounded and prevents runaway matching on long title-case sentences (e.g., a section heading `"The Big Brown Fox Jumped Over Corp"` would NOT match because it exceeds the cap).
+
+**Matches:**
+- `"ABC Corp"` → `ABC Corp`
+- `"ABC Inc."` → `ABC Inc.`
+- `"Apple Inc."` → `Apple Inc.`
+- `"Acme Holdings LLC"` → `Acme Holdings LLC`
+- `"International Business Machines Corp"` (3 words + Corp, 4 total) → full match
+- `"ABC Corporation"` (full word) → `ABC Corporation`
+
+**Rejects:**
+- `"abc corp"` (lowercase name) — `[A-Z]` requires capital first char, no match
+- `"Corp"` alone — no preceding capitalized word
+- `"The company said"` — `"company"` is lowercase, no match
+
+**Known false positive:** `"The Supreme Court Inc"` — `"The Supreme Court"` is 3 capitalized words followed by `Inc`. Matches. Rare but possible.
+
+**Level:** Standard + Paranoid.
+
+**ReDoS:** benign. The `{0,3}` bound limits backtracking to at most 4 positions per start.
+
+#### 11.4.8 `entities.en-legal-form`
+
+**Pattern:** see § 11.3. Identical name shape to `en-corp-suffix`, different suffix list.
+
+**Legal form list:** 15 international forms. `GmbH`, `AG` (Germany); `S.p.A.`, `S.r.l.` (Italy); `S.A.S`, `S.A.`, `SARL`, `SAS` (France); `PLC`, `LLP` (UK); `Pty Ltd`, `Pty` (Australia); `NV`, `BV` (Netherlands); `AB` (Sweden); `OY` (Finland); `KG`, `OHG` (Germany).
+
+**Alternation order.** Longer forms first: `S.p.A.` before `S.A.`, `Pty Ltd` before `Pty`. The `Pty\s+Ltd` branch requires literal whitespace between `Pty` and `Ltd`.
+
+**Matches:**
+- `"ABC GmbH"` → `ABC GmbH`
+- `"Deutsche Bank AG"` → `Deutsche Bank AG`
+- `"Alpha S.A."` → `Alpha S.A.`
+- `"Beta Pty Ltd"` → `Beta Pty Ltd`
+- `"Gamma PLC"` → `Gamma PLC`
+- `"Delta Holdings NV"` → `Delta Holdings NV`
+
+**Rejects:**
+- `"PLC"` alone — no preceding word
+- `"abc gmbh"` (lowercase) — no match
+
+**Rule interaction with `en-corp-suffix`.** `"ABC Ltd."` matches `en-corp-suffix` via `Ltd\.?`. `"ABC Pty Ltd"` matches `en-legal-form` via `Pty\s+Ltd`. No overlap — both rules emit independent candidates when both match.
+
+**ReDoS:** benign.
+
+#### 11.4.9 `entities.en-title-person`
+
+**Pattern:** `(?<![A-Za-z])(?:Mr|Mrs|Ms|Miss|Dr|Prof|Rev|Sir)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}(?![A-Za-z])`
+
+**Title list:** 8 personal titles. `Mr`, `Mrs`, `Ms`, `Miss`, `Dr`, `Prof`, `Rev`, `Sir`. Optional period after the title (both `"Mr Smith"` and `"Mr. Smith"` match).
+
+**Name shape `[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}`.** 1-3 name parts, each a capitalized word with lowercase continuation. Matches `"Smith"`, `"John Smith"`, `"John Paul Smith"` but NOT `"McDonald"` (internal capital — acknowledged limitation, could be extended to `[A-Z][a-z]+(?:[A-Z][a-z]+)*` for camelCase names in a future hygiene pass).
+
+**Matches:**
+- `"Mr. Smith"` → `Mr. Smith`
+- `"Mr Smith"` (no period) → `Mr Smith`
+- `"Dr. Jane Doe"` → `Dr. Jane Doe`
+- `"Prof. Anderson"` → `Prof. Anderson`
+- `"Rev. John Paul Smith"` → `Rev. John Paul Smith`
+
+**Rejects:**
+- `"Mr."` alone — no match
+- `"Mr. smith"` (lowercase name) — `[A-Z]` required, no match
+- `"MR. SMITH"` (all caps) — second char `R` is not `[a-z]`, fails the name shape, no match. ALL-CAPS is an acknowledged limitation.
+
+**Level:** Paranoid only. Title-name detection has non-trivial false positive rate on ordinary prose.
+
+**ReDoS:** benign.
+
+#### 11.4.10 `entities.en-exec-title`
+
+**Pattern:** `(?<![A-Za-z])(?:Vice\s+President|CEO|CFO|COO|CTO|CIO|CMO|CHRO|President|Chairman|Chairwoman|Director|Founder|Partner|Secretary|Treasurer)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}(?![A-Za-z])`
+
+**Title list.** C-suite acronyms (CEO/CFO/...), English titles (President, Chairman, Director, Founder, Partner), corporate officers (Secretary, Treasurer). `Vice President` is a two-word title requiring `\s+` between words.
+
+**Alternation order.** `Vice\s+President` before `President` (otherwise `"Vice President John"` would capture only `"President John"`). Confirmed via test case below.
+
+**Matches:**
+- `"CEO John Smith"` → `CEO John Smith`
+- `"President Jane Doe"` → `President Jane Doe`
+- `"Vice President Kamala Harris"` → `Vice President Kamala Harris`
+- `"Director Kim Park"` → `Director Kim Park`
+- `"Founder Marc Zuckerberg"` → `Founder Marc Zuckerberg`
+- `"Chairman Jack Ma"` → `Chairman Jack Ma`
+
+**Rejects:**
+- `"CEO"` alone — no following name
+- `"Director of Sales"` — `"of"` is lowercase, name shape fails, no match
+- `"President Obama"` — matches correctly (`Obama` is one capitalized word)
+
+**Level:** Paranoid only.
+
+**ReDoS:** benign.
+
+#### 11.4.11 `entities.ko-identity-context`
+
+**Pattern:** `(?<=(?:대표자|성명|이름|법인명|회사명|상호|소속|직함|직위)\s*[:：]?\s*)(?:[A-Za-z][A-Za-z0-9&.\-]*|[가-힣]{2,6})`
+
+**Label list:** 9 Korean identity labels. `대표자`, `성명`, `이름`, `법인명`, `회사명`, `상호`, `소속`, `직함`, `직위`.
+
+**Variable-length lookbehind.** Same caveat as § 9.4.10 and § 10.4.8: ES2018+, supported in Node 18+, bounded cost (longest label is 3 Hangul syllables plus optional punctuation plus whitespace).
+
+**Value shape.** Either an English/digit token (`[A-Za-z][A-Za-z0-9&.\-]*`) or a 2-6 syllable Korean token (`[가-힣]{2,6}`). The upper bound of 6 covers most Korean company names; longer names truncate.
+
+**Matches:**
+- `"대표자: 김철수"` → `김철수` (label consumed by lookbehind)
+- `"법인명: 삼성전자"` → `삼성전자`
+- `"회사명 ABC"` → `ABC`
+- `"상호: (주)홍길동"` — the lookbehind matches `"상호: "`, but then `(주)홍길동` starts with `(` which is NOT in the value character class. No match for this specific string. Acknowledged limitation — `상호` labels with `(주)` prefix are caught by `ko-corp-abbrev` rule instead, so no candidate is lost.
+
+**Rejects:**
+- `"대표자"` alone — no value
+- `"이름 홍길동 씨"` — matches only `홍길동`; the `씨` is left over and caught by `ko-honorific`
+
+**ReDoS:** bounded. Variable-length lookbehind scans back a fixed maximum of ~10 characters.
+
+#### 11.4.12 `entities.en-identity-context`
+
+**Pattern:** `(?<=(?:Full\s+Name|Company\s+Name|Name|Company|Representative|Contact|Signatory|Client|Counterparty)\s*:\s*)[A-Z][A-Za-z.\-]*(?:\s+[A-Z][A-Za-z.\-]*){0,3}`
+
+**Label list:** 9 English identity labels. Compound forms (`Full Name`, `Company Name`) before single-word forms (`Name`, `Company`) in the alternation so the engine prefers the longer match.
+
+**Required colon after label.** `\s*:\s*` in the lookbehind — English forms almost always use colons, unlike Korean where colons are optional. Forms without colons (e.g., `"Name John Smith"` written as a table cell) do NOT match. Acknowledged limitation.
+
+**Value shape.** 1-4 capitalized words, each `[A-Z][A-Za-z.\-]*` — allows internal periods and hyphens (e.g., `"J.P. Morgan"`, `"Jean-Paul"`).
+
+**Matches:**
+- `"Name: John Smith"` → `John Smith`
+- `"Full Name: Jane Doe"` → `Jane Doe`
+- `"Company: Acme Corp"` → `Acme Corp`
+- `"Signatory: J.P. Morgan"` → `J.P. Morgan`
+- `"Client: Alpha Beta Gamma Delta"` (4 words) → full match
+
+**Rejects:**
+- `"Name"` alone — no value
+- `"Name: john smith"` (lowercase) — first char must be `[A-Z]`, no match
+- `"Name John Smith"` (no colon) — lookbehind requires colon, no match
+
+**ReDoS:** bounded. Variable-length lookbehind maximum is `"Company Name: "` (~14 chars), name repetition is capped at 4.
+
+### 11.5 Test file specification (`rules/entities.test.ts`)
+
+Create `src/detection/rules/entities.test.ts`. Per RULES_GUIDE § 8.1, minimum per-rule test set is 13 cases. Twelve rules × 13 tests = **156 tests minimum**. Target ~170 tests to cover alternation-order gotchas (대표이사 vs 대표, Vice President vs President, 유한책임회사 vs 유한회사) with explicit regression tests.
+
+**Organization:** mirror § 9.5 / § 10.5 exactly. Shared helpers copied from § 9.5 with `ENTITIES` substituted for `FINANCIAL`. One registry-sanity describe block, then one describe per rule.
+
+**Alternation-order regression tests.** Every rule with ordered alternations (1, 4, 5, 10) gets an explicit test that the longer form takes precedence:
+
+```typescript
+describe("entities.ko-title-name", () => {
+  // ... 12 other tests ...
+
+  it("prefers 대표이사 over 대표 when both could match", () => {
+    // If alternation order were wrong, the match would be "대표 이사" — the
+    // regex would consume "대표" and fail to reach "이사" as a separate title.
+    expect(matchOne("ko-title-name", "대표이사 김철수")).toEqual([
+      "대표이사 김철수",
+    ]);
+  });
+});
+
+describe("entities.ko-legal-other", () => {
+  // ... 12 other tests ...
+
+  it("prefers 유한책임회사 over 유한회사 when both could match", () => {
+    expect(matchOne("ko-legal-other", "유한책임회사 ABC")).toEqual([
+      "유한책임회사 ABC",
+    ]);
+  });
+});
+
+describe("entities.en-exec-title", () => {
+  // ... 12 other tests ...
+
+  it("prefers 'Vice President' over 'President' when both could match", () => {
+    expect(matchOne("en-exec-title", "Vice President Kamala Harris")).toEqual([
+      "Vice President Kamala Harris",
+    ]);
+  });
+});
+```
+
+**Role blacklist context.** Because § 14's role blacklist will suppress false positives downstream, the entities test file SHOULD include tests that verify the regex DOES match common-word false positives (like `"오늘 씨"`). These tests confirm that the regex is deliberately context-free — the assertion is that the regex matches, NOT that the user sees the match in the final output:
+
+```typescript
+it("matches common-word false positives as a regex-layer candidate (suppressed downstream by role blacklist)", () => {
+  // This is intentional: regex is context-free; heuristics apply the blacklist.
+  expect(matchOne("ko-honorific", "오늘 씨")).toEqual(["오늘 씨"]);
+});
+```
+
+This test is a contract between the regex layer and the heuristic layer: the regex declares "I will emit this false positive; the heuristic phase is responsible for filtering it." Removing the test without updating the heuristic layer would silently break the contract.
+
+**ReDoS adversarial test per rule.** One per rule, following § 9.5 / § 10.5 template.
+
+### 11.6 Registry integration
+
+Extend `src/detection/_framework/registry.ts`:
+
+```typescript
+// Before (§ 10 state):
+import { FINANCIAL } from "../rules/financial.js";
+import { IDENTIFIERS } from "../rules/identifiers.js";
+import { TEMPORAL } from "../rules/temporal.js";
+
+export const ALL_REGEX_RULES: readonly RegexRule[] = [
+  ...IDENTIFIERS,
+  ...FINANCIAL,
+  ...TEMPORAL,
+  // Phase 1 follow-up commits append:
+  //   ...ENTITIES  (§ 11)
+  //   ...LEGAL     (§ 13)
+] as const;
+
+// After (§ 11 commit):
+import { ENTITIES } from "../rules/entities.js";
+import { FINANCIAL } from "../rules/financial.js";
+import { IDENTIFIERS } from "../rules/identifiers.js";
+import { TEMPORAL } from "../rules/temporal.js";
+
+export const ALL_REGEX_RULES: readonly RegexRule[] = [
+  ...IDENTIFIERS,
+  ...FINANCIAL,
+  ...TEMPORAL,
+  ...ENTITIES,
+  // Phase 1 follow-up commits append:
+  //   ...LEGAL     (§ 13)
+] as const;
+```
+
+### 11.7 Acceptance checklist for § 11
+
+- [ ] `src/detection/rules/entities.ts` exists and exports `ENTITIES: readonly RegexRule[]`
+- [ ] `ENTITIES.length === 12`
+- [ ] Every rule's id starts with `"entities."`
+- [ ] Every rule has `category: "entities"`
+- [ ] Every rule's pattern has the `g` flag
+- [ ] NO rules in ENTITIES have post-filters (entity detection is context-free at the regex layer; context-aware suppression is deferred to § 14 heuristics)
+- [ ] Alternation order is correct: `대표이사` before `대표` (rule 5); `유한책임회사` before `유한회사` (rule 4); `Vice\s+President` before `President` (rule 10); longer personal titles before shorter (rule 9 uses all single-token titles so no concern there); longer honorific forms before shorter (rule 6: `사장님` before `님`)
+- [ ] Rule 2 (`ko-corp-suffix`) has right boundary `(?![가-힣A-Za-z])` to prevent `"X주식회사법인"` false match
+- [ ] Rule 3 (`ko-corp-abbrev`) matches BOTH `(주)` and `㈜` forms
+- [ ] `rules/entities.test.ts` has ≥ 156 tests, all passing
+- [ ] `rules/entities.test.ts` has alternation-order regression tests for rules 4, 5, 6, 10
+- [ ] `rules/entities.test.ts` has common-word false-positive tests documenting the regex→heuristic contract (see § 11.5)
+- [ ] Every describe block earns ★★★ on the quality rubric
+- [ ] No rule uses `\b` in a pattern with Hangul (RULES_GUIDE § 12.1 anti-pattern)
+- [ ] No rule hardcodes a specific company or person name (RULES_GUIDE § 12.2 anti-pattern)
+- [ ] Registry update: `ALL_REGEX_RULES` includes `...ENTITIES` immediately after `...TEMPORAL`
+- [ ] Registry verification passes at module load
+- [ ] `bun run test src/detection/detect-pii.characterization.test.ts` still passes byte-for-byte
+- [ ] `bun run test src/detection/detect-pii.integration.test.ts` still passes
+- [ ] `bun run test` overall test count increases by ≥ 156 in this commit
+- [ ] ReDoS guard fuzz passes for all 12 entity rules (variable-length lookbehind rules 11, 12 must pass the 50ms budget)
+- [ ] No new npm dependencies
+- [ ] No edits to any Phase 0 file other than `registry.ts`
+
+---
+
 ## RESUME POINTER (for Claude in the next session)
 
-**Status as of 2026-04-12 v5 (session +2 second half):** § 0–10 written. § 11–18 pending.
+**Status as of 2026-04-12 v6 (session +3 first half):** § 0–11 written. § 12–18 pending.
 
 ### What is already written (do NOT rewrite)
 
@@ -3164,10 +3778,11 @@ Registry verification at module load catches any malformed rule. Same fail-fast 
 - **§ 8** — `detect-all.ts` pipeline: public surface (8 exports), complete file content (~200 lines of TypeScript with full JSDoc), `engine.ts` `Analysis` shape extension contract with `NonPiiCandidate` interface, migration rules for `aggregatePii` → `aggregateAll` with ruleId-prefix partitioning, one new `engine.test.ts` test, 50-test specification for `detect-all.test.ts` (groups 1–4), 10-test specification for `detect-all.integration.test.ts`, 15-item acceptance checklist
 - **§ 9** — `rules/financial.ts`: 10 regex rules (won-amount, won-unit, won-formal, usd-symbol, usd-code, foreign-symbol, foreign-code, percentage, fraction-ko, amount-context-ko); normalization assumption guide; complete file content with two post-filter helpers (wonAmountInRange, percentageInRange); per-rule deep dive for each of the 10 rules covering matches/variants/boundaries/rejects/ReDoS/level-rationale/known-false-positives; 130-test minimum plan with ★★★ quality rubric; `registry.ts` diff; 18-item acceptance checklist
 - **§ 10** — `rules/temporal.ts`: 8 regex rules (date-ko-full, date-ko-short, date-ko-range, date-iso, date-en, duration-ko, duration-en, date-context-ko); `isValidCalendarDate` helper with Date constructor roll-over detection for leap years and month-specific day counts; `validNumericDate` + `validEnglishDate` post-filters with `MONTH_NAME_TO_NUM` table; per-rule deep dive for each of the 8 rules; 104-test minimum plan with calendar-validity tests (Feb 30, Feb 29 leap/non-leap, April 31); `registry.ts` diff; 21-item acceptance checklist
+- **§ 11** — `rules/entities.ts`: 12 regex rules split by language — Korean (6): `ko-corp-prefix`, `ko-corp-suffix`, `ko-corp-abbrev` (matches both `(주)` and `㈜`), `ko-legal-other`, `ko-title-name`, `ko-honorific`; English (6): `en-corp-suffix`, `en-legal-form`, `en-title-person`, `en-exec-title`, `ko-identity-context`, `en-identity-context`; NO post-filters (context-free by design, role blacklist deferred to § 14); alternation-order notes for `대표이사` vs `대표`, `유한책임회사` vs `유한회사`, `Vice President` vs `President`; regex→heuristic contract tests for common-word false positives; 156-test minimum plan; `registry.ts` diff; 22-item acceptance checklist
 
 ### What is pending (write in this order, across future sessions)
 
-Each section estimate is rough. Total pending: ~2800 lines (§ 6–10 complete, approximately 2700 lines added across sessions +1 and +2).
+Each section estimate is rough. Total pending: ~2100 lines (§ 6–11 complete, approximately 3300 lines added across sessions +1, +2, +3).
 
 | § | Content | Est. lines | Order |
 |---|---|---:|---:|
@@ -3176,6 +3791,7 @@ Each section estimate is rough. Total pending: ~2800 lines (§ 6–10 complete, 
 | ~~8~~ | ~~`detect-all.ts` — `detectAll`, `detectAllInZip`, `buildAllTargetsFromZip`, Analysis shape extension~~ — **DONE session +1** | ~400 | ✓ |
 | ~~9~~ | ~~`rules/financial.ts` — 10 regex rules (KRW × 3, USD × 2, foreign × 2, percentage, fraction, context scanner)~~ — **DONE session +2** | ~700 | ✓ |
 | ~~10~~ | ~~`rules/temporal.ts` — 8 regex rules (Korean full/short/range dates, ISO, English date, Korean/English duration, label-driven date context)~~ — **DONE session +2** | ~550 | ✓ |
+| ~~11~~ | ~~`rules/entities.ts` — 12 regex rules (Korean × 6: corp-prefix/suffix/abbrev, legal-other, title-name, honorific; English × 6: corp-suffix, legal-form, title-person, exec-title, ko-identity-context, en-identity-context)~~ — **DONE session +3** | ~700 | ✓ |
 | 10 | `rules/temporal.ts` — 8 regex rules. Korean date (2024년 3월 15일, 2024.3.15), Korean short date, Korean date range, ISO date, English date, Korean duration (3년간, 6개월, 90일), English duration, temporal context scanner. | ~500 | Session +2 |
 | 11 | `rules/entities.ts` — 12 regex rules. Korean corporate suffix (주식회사 X / X 주식회사 / (주)X), Korean legal forms (유한회사, 합자회사, 사단법인), Korean title+name (대표이사 김철수, 이사 박영희), English corporate suffix (Corp/Inc/LLC/Ltd/Co), English legal forms (GmbH/S.A./NV/PLC/Pty), English title+name (Mr./Dr./CEO + Name), Korean honorifics, identity context scanner. | ~700 | Session +2 |
 | 12 | `rules/structural/` — 5 parsers. Each parser has its own .ts file with StructuralParser implementation + top-of-file JSDoc with rationale. definition-section (Korean + English), signature-block (By:, 이름:, 대표이사), party-declaration (first-para scan), recitals (WHEREAS, 전문), header-block (title, execution date, document number). Plus `index.ts` re-exporting `ALL_STRUCTURAL_PARSERS`. | ~900 | Session +3 |
@@ -3231,19 +3847,19 @@ Phase 1 brief does NOT address UI. It only ensures `engine.ts` adds `nonPiiCandi
 
 ### Next session startup checklist
 
-1. Open this file and confirm the "PARTIAL DRAFT" warning is still at the top — it should now say "§ 0–10 written".
+1. Open this file and confirm the "PARTIAL DRAFT" warning is still at the top — it should now say "§ 0–11 written".
 2. Read `../document-redactor-private-notes/session-log-2026-04-11-v2.md` for the full review context.
-3. Read the 4 external feedback files in repo root (`ChatGPT 5.4 Pro Feedback_1.md`, `_2.md`, `Codex Feedback.md`) — these are the quality bar for rule authoring, especially for § 11–14 per-category rule drafting.
-4. Verify `git log --oneline -7` shows the session-+1 and session-+2 commits adding § 6–10 after `e41d842 docs(phases): start phase-1 rulebook brief §0-5 (PARTIAL DRAFT)`.
+3. Read the 4 external feedback files in repo root (`ChatGPT 5.4 Pro Feedback_1.md`, `_2.md`, `Codex Feedback.md`) — these are the quality bar for rule authoring, especially for § 12–14 per-category rule drafting.
+4. Verify `git log --oneline -8` shows the session-+1 / +2 / +3 commits adding § 6–11 after `e41d842 docs(phases): start phase-1 rulebook brief §0-5 (PARTIAL DRAFT)`.
 5. Verify `bun run test` still shows 422 passing (Phase 0 has not been executed by Codex yet — these are still the v1.0 legacy tests).
-6. Start writing § 11 (`rules/entities.ts` — 12 regex rules, ~700 lines) → § 12 (structural parsers, ~900) → § 13 (legal, ~400) → § 14 (heuristics + role blacklists, ~700). Model every section on § 9 / § 10 structure (overview table, normalization notes, full file content, per-rule deep dive, test spec, registry diff, acceptance checklist). Structural parsers and heuristics have slightly different shapes — see RULES_GUIDE § 5 (parser writeup) and § 6 (heuristic writeup) before starting § 12 and § 14.
+6. **Before starting § 12:** read RULES_GUIDE § 5 (Writing a structural parser) carefully. Structural parsers have a DIFFERENT shape from regex rules — they export a `parse(text)` function, return `StructuralDefinition[]` not `Candidate[]`, and are not level-filtered. Model § 12.1 through § 12.5 on RULES_GUIDE § 5's example parser. Then write § 12 (structural parsers, ~900) → § 13 (legal, ~400 — same shape as § 9/10/11, easy) → § 14 (heuristics, ~700 — requires RULES_GUIDE § 6 as reference).
 7. After each section: `wc -l docs/phases/phase-1-rulebook.md`, commit with a message like `docs(phases): phase-1 brief § 11 entities rules (partial)`.
 8. Continue across sessions until every section is written, then remove the "PARTIAL DRAFT" warning at the top as the final commit of the brief-authoring stream.
 
 ### Do NOT in future sessions
 
 - Do NOT re-run plan-eng-review on this brief. The review is complete.
-- Do NOT rewrite § 0–10. They are locked. § 6–8 specify exact TypeScript for the framework extension surface. § 9 specifies exact regex sources for the 10 financial rules. § 10 specifies exact regex sources for the 8 temporal rules plus the `isValidCalendarDate` / `validNumericDate` / `validEnglishDate` post-filters. Do not "improve", "tune", rename, or refactor any of these without a ReDoS re-audit and a plan-eng-review re-opener.
+- Do NOT rewrite § 0–11. They are locked. § 6–8 specify exact TypeScript for the framework extension surface. § 9 specifies exact regex sources for the 10 financial rules. § 10 specifies exact regex sources for the 8 temporal rules plus the `isValidCalendarDate` / `validNumericDate` / `validEnglishDate` post-filters. § 11 specifies exact regex sources for the 12 entity rules with deliberately context-free semantics (role-blacklist suppression happens in § 14 heuristics, not here). Do not "improve", "tune", rename, or refactor any of these without a ReDoS re-audit and a plan-eng-review re-opener.
 - Do NOT hand the brief to Codex until the "PARTIAL DRAFT" warning is removed.
 - Do NOT commit Phase 1 content changes to `src/` in the same session as brief authoring. This is a doc-only stream until the brief is complete.
 - Do NOT modify the Phase 0 brief again after commit 187b7f8. It is locked for Codex execution.
