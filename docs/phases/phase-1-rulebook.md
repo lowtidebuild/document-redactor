@@ -2,26 +2,25 @@
 
 > ⚠️ **PARTIAL DRAFT — DO NOT EXECUTE** ⚠️
 >
-> This brief is **incomplete** as of 2026-04-12 (v6, after session +3 first half).
-> § 0–11 are written (orientation, mission, invariants, architecture, file
+> This brief is **incomplete** as of 2026-04-12 (v7, after session +3 second half).
+> § 0–12 are written (orientation, mission, invariants, architecture, file
 > layout, framework type extensions, runner extensions, detect-all.ts pipeline,
-> financial rules, temporal rules, and entities rules). The remaining rule
-> content (§ 12–14 structural / legal / heuristics) and § 15–18 (testing /
-> TDD / verification / acceptance) are **NOT YET AUTHORED**.
+> financial rules, temporal rules, entities rules, and the 5 structural
+> parsers). The remaining rule content (§ 13–14 legal / heuristics) and
+> § 15–18 (testing / TDD / verification / acceptance) are **NOT YET AUTHORED**.
 >
 > **Do NOT hand this to Codex for execution in its current state.** Codex would
-> read the file-layout section, fail to find rule specifications in § 12–14,
+> read the file-layout section, fail to find rule specifications in § 13–14,
 > and produce garbage code trying to fill in the gaps.
 >
 > **If you are Claude in a future session:** jump to the `## RESUME POINTER` section
 > at the very bottom of this file. It tells you exactly where to pick up writing.
 >
-> **If you are the user:** this file will be completed across 2 more Claude
+> **If you are the user:** this file will be completed across 1–2 more Claude
 > sessions. Decisions are locked (see session log 2026-04-11-v2). The next step is
-> writing § 12 (structural parsers, ~900 lines — different shape from regex
-> rules, requires RULES_GUIDE § 5 as reference), then § 13 (legal, ~400 lines),
-> then § 14 (heuristics + role blacklists, ~700 lines — requires RULES_GUIDE
-> § 6 as reference), followed by § 15–18.
+> writing § 13 (legal rules, ~400 lines — reuses § 9/10/11 template), then § 14
+> (heuristics + role blacklists, ~700 lines — requires RULES_GUIDE § 6 as
+> reference), followed by § 15–18 (testing / TDD / verification / acceptance).
 
 ---
 
@@ -3761,9 +3760,773 @@ export const ALL_REGEX_RULES: readonly RegexRule[] = [
 
 ---
 
+## 12. `rules/structural/` — 5 parsers
+
+Five structural parsers covering definition sections, signature blocks, party declarations, recitals, and header blocks. **Parsers have a DIFFERENT SHAPE from regex rules** — they export a `parse(text)` function that returns `readonly StructuralDefinition[]`, not `Candidate[]`. They are position-dependent (scan a specific region of the document) and do not run through `runRegexPhase`. They run through `runStructuralPhase` (see § 7.6).
+
+Before writing any parser code, re-read `docs/RULES_GUIDE.md` § 5 (Writing a structural parser). This section builds on that writeup; where they disagree, RULES_GUIDE § 5 wins.
+
+### 12.1 Category overview
+
+| # | id | Languages | What it extracts | Scan region |
+|---|---|---|---|---|
+| 1 | `structural.definition-section` | `["ko", "en"]` | `"X" means Y` / `"X"이라 함은 Y` / `(이하 "X")` / `hereinafter "X"` | Entire document |
+| 2 | `structural.signature-block` | `["ko", "en"]` | `By: / Name: / Title:` / `대표이사 김철수` in signature area | Last 20% of text |
+| 3 | `structural.party-declaration` | `["ko", "en"]` | `by and between ABC (hereinafter 'Buyer')` / `A 주식회사(이하 '갑')` | First 2000 chars |
+| 4 | `structural.recitals` | `["ko", "en"]` | `WHEREAS, ABC Corporation ...` / `전문 ... A 주식회사 ...` | First 5000 chars |
+| 5 | `structural.header-block` | `["ko", "en"]` | Document title ending in `AGREEMENT` / `계약서` | First 500 chars |
+
+**No levels.** Structural parsers have no `levels` field and are not level-filtered. Per RULES_GUIDE § 10.2, level filtering applies only to regex rules and heuristics. Structural parsers are either useful or not; there is no "paranoid structural parsing".
+
+### 12.2 Parser shape and constraints (read before writing)
+
+Every parser in § 12.3–§ 12.7 satisfies the Phase 0 `StructuralParser` interface:
+
+```typescript
+export interface StructuralParser {
+  readonly id: string;
+  readonly category: "structural";
+  readonly subcategory: string;
+  readonly languages: readonly Language[];
+  readonly description: string;
+  parse(normalizedText: string): readonly StructuralDefinition[];
+}
+```
+
+And every definition emitted satisfies `StructuralDefinition`:
+
+```typescript
+export interface StructuralDefinition {
+  readonly label: string;
+  readonly referent: string;
+  readonly source: "definition-section" | "recitals" | "party-declaration";
+}
+```
+
+**Hard constraints** (violations fail the acceptance checklist):
+
+1. **Pure function.** `parse(text)` must return the same output for the same input. No `Date.now()`, no `Math.random()`, no module-level state, no file I/O. The runner calls parsers concurrently across scopes; non-purity causes hard-to-debug races.
+
+2. **NFC not re-applied.** `normalizeForMatching` passes in text that has fullwidth/hyphen/zero-width normalization but NOT NFC composition. Parsers that need NFC for name matching MAY call `.normalize("NFC")` internally — but only if they do not return offsets, because NFC is N→1 and breaks position fidelity.
+
+3. **Output is `readonly StructuralDefinition[]`, not `Candidate[]`.** Structural parsers do NOT produce redaction candidates directly. They produce metadata the heuristic phase consumes as `HeuristicContext.structuralDefinitions`.
+
+4. **Source field is constrained to 3 values.** The `source` union (`"definition-section" | "recitals" | "party-declaration"`) is locked by Phase 0 types.ts and § 6 of this brief forbids modification. Parsers 2 (signature-block) and 5 (header-block) do not semantically match any of the 3 values exactly; see § 12.9 for the mapping rationale (signature-block → `"party-declaration"`, header-block → `"definition-section"`).
+
+5. **Position dependency is explicit.** Parsers that scan only a subset of the text MUST document the region in their `description` field and use a named constant for the region bound. Parsers 2–5 are position-dependent; parser 1 scans the entire document.
+
+6. **Fail-loud.** No try/catch inside `parse()`. If a regex throws (pathological input) or the text is malformed, let it bubble up per § 3 invariant 16.
+
+7. **No hardcoded entity names.** RULES_GUIDE § 12.2 anti-pattern applies. Parsers detect entity-shaped spans using category markers (주식회사, Corp, hereinafter, 이하) but do NOT hardcode specific company names.
+
+### 12.3 `definition-section.ts`
+
+**Purpose.** Extract defined terms from four clause patterns: English `"X" means Y`, English `hereinafter "X"`, Korean `"X"이라 함은 Y`, Korean `(이하 "X")`. Scans the entire document.
+
+**Known interaction:** `src/propagation/definition-clauses.ts` already has an English-only definition parser for the Lane C propagation. The Phase 1 parser COEXISTS with it — Phase 1 does NOT modify the Lane C parser (per § 3 invariant 6). Consolidation is deferred to post-Phase-1.
+
+**Full file content.** Put this EXACTLY into `src/detection/rules/structural/definition-section.ts`:
+
+```typescript
+/**
+ * Structural parser: definition-section extraction.
+ *
+ * Extracts defined terms from four clause shapes:
+ *   1. English "X" means Y / "X" shall mean Y
+ *   2. English hereinafter referred to as "X" / hereinafter "X"
+ *   3. Korean "X"이라 함은 Y / "X"란 Y
+ *   4. Korean (이하 "X"라 한다) / 이하 "X"
+ *
+ * Output: StructuralDefinition[] with source = "definition-section".
+ *
+ * Scans the ENTIRE document. Per-clause referent is trimmed at the first
+ * sentence terminator (. ; 。 , newline) and capped at MAX_REFERENT_LENGTH
+ * characters to prevent runaway captures on unterminated clauses.
+ *
+ * NOTE: this parser coexists with src/propagation/definition-clauses.ts
+ * (the Lane C English-only parser). They are NOT consolidated in Phase 1
+ * per § 3 invariant 6 of phase-1-rulebook.md. Consolidation is deferred.
+ *
+ * See:
+ *   - docs/phases/phase-1-rulebook.md § 12.3
+ *   - docs/RULES_GUIDE.md § 5 — structural parser conventions
+ */
+
+import type {
+  StructuralDefinition,
+  StructuralParser,
+} from "../../_framework/types.js";
+
+/** Max referent length — prevents runaway captures on unterminated clauses. */
+const MAX_REFERENT_LENGTH = 200;
+
+/** Sentence-terminator character class for referent trimming. */
+const TERMINATOR_RE = /[.;。、\n]/;
+
+/** Trim a raw referent at the first terminator or MAX_REFERENT_LENGTH. */
+function trimReferent(raw: string): string {
+  const m = raw.match(TERMINATOR_RE);
+  const end = m && m.index !== undefined ? m.index : raw.length;
+  return raw.slice(0, Math.min(end, MAX_REFERENT_LENGTH)).trim();
+}
+
+export const DEFINITION_SECTION: StructuralParser = {
+  id: "structural.definition-section",
+  category: "structural",
+  subcategory: "definition-section",
+  languages: ["ko", "en"],
+  description:
+    "Extracts defined terms from 'X means Y' (English) and 'X이라 함은 Y' / 이하 'X' (Korean) patterns across the entire document",
+  parse(text: string): readonly StructuralDefinition[] {
+    if (text.length === 0) return [];
+
+    const out: StructuralDefinition[] = [];
+
+    // English: "X" means Y / "X" shall mean Y
+    const englishMeans = /"([^"]+)"\s+(?:means|shall\s+mean)\s+([^.;]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = englishMeans.exec(text)) !== null) {
+      out.push({
+        label: m[1]!,
+        referent: trimReferent(m[2]!),
+        source: "definition-section",
+      });
+    }
+
+    // English: hereinafter referred to as "X" / hereinafter "X"
+    const englishHereinafter =
+      /hereinafter(?:\s+referred\s+to)?\s+as\s+"([^"]+)"/g;
+    while ((m = englishHereinafter.exec(text)) !== null) {
+      out.push({
+        label: m[1]!,
+        referent: "",
+        source: "definition-section",
+      });
+    }
+
+    // Korean: "X"이라 함은 Y / "X"란 Y
+    const koreanMeans =
+      /"([^"]+)"(?:이라|란)\s*함은\s*([^.。\n]+)/g;
+    while ((m = koreanMeans.exec(text)) !== null) {
+      out.push({
+        label: m[1]!,
+        referent: trimReferent(m[2]!),
+        source: "definition-section",
+      });
+    }
+
+    // Korean: 이하 "X" / 이하 "X"라 한다 / 이하 "X"라 칭한다
+    const koreanIha = /이하\s*"([^"]+)"(?:라\s*(?:한다|칭한다))?/g;
+    while ((m = koreanIha.exec(text)) !== null) {
+      out.push({
+        label: m[1]!,
+        referent: "",
+        source: "definition-section",
+      });
+    }
+
+    return out;
+  },
+};
+```
+
+**Matches (positive test cases, minimum 3):**
+- `'"Buyer" means ABC Corporation.'` → `{label: "Buyer", referent: "ABC Corporation", source: "definition-section"}`
+- `'"Buyer" shall mean ABC Corporation;'` → `{label: "Buyer", referent: "ABC Corporation", source: "definition-section"}`
+- `'"갑"이라 함은 A 주식회사를 말한다.'` → `{label: "갑", referent: "A 주식회사를 말한다", source: "definition-section"}`
+
+**Hereinafter variants (minimum 3):**
+- `'ABC Corporation (hereinafter "Buyer")'` → `{label: "Buyer", referent: "", source: "definition-section"}`
+- `'ABC Corporation (hereinafter referred to as "Buyer")'` → `{label: "Buyer", referent: "", source: "definition-section"}`
+- `'A 주식회사(이하 "갑")'` → `{label: "갑", referent: "", source: "definition-section"}`
+
+**Korean variants:**
+- `'이하 "갑"라 한다'` → `{label: "갑", referent: "", source: "definition-section"}`
+- `'이하 "갑"라 칭한다'` → `{label: "갑", referent: "", source: "definition-section"}`
+
+**Rejects (must return empty or skip this clause):**
+- Empty text → `[]`
+- `"Buyer means ABC"` (no quotes) → no match for the `englishMeans` regex
+- `"X means"` (no referent) → no match (requires `[^.;]+` after `means`)
+
+**ReDoS notes.** `[^"]+` is unbounded but safe: no nested quantifiers, terminating literal quote provides a deterministic exit. `[^.;]+` similarly safe. The `MAX_REFERENT_LENGTH` cap in `trimReferent` is belt-and-suspenders protection for the output, not the regex.
+
+**Referent trimming rationale.** English "means" clauses can span multiple lines when the definition is long. Without trimming, a definition `"Buyer" means ABC Corporation, a Delaware corporation with its principal place of business at 123 Main St...` would capture everything up to the first `.`. That IS the intended behavior — the trim at `.` is correct. But if the sentence has no terminator at all (rare but possible in scanned contracts), `MAX_REFERENT_LENGTH` caps the referent at 200 characters to avoid leaking the rest of the document.
+
+### 12.4 `signature-block.ts`
+
+**Purpose.** Extract signatory information (name + title) from the signature area at the end of the document. Typical signature blocks appear in the last 20% of text.
+
+**Source mapping.** Signatures are mapped to `source: "party-declaration"` because signatories ARE the parties to the agreement. See § 12.9 for the full rationale.
+
+**Full file content.** Put this EXACTLY into `src/detection/rules/structural/signature-block.ts`:
+
+```typescript
+/**
+ * Structural parser: signature-block extraction.
+ *
+ * Extracts signatory information from the signature region at the document
+ * tail. Typical patterns:
+ *
+ *   English:
+ *     By: _______________
+ *     Name: John Smith
+ *     Title: CEO
+ *
+ *   Korean:
+ *     대표이사  김철수  (서명)
+ *     이름: 김철수
+ *
+ * Output: StructuralDefinition[] with source = "party-declaration".
+ * The "signature-block" value is NOT in the StructuralDefinition source
+ * union (see § 6 of phase-1-rulebook.md), so signatures map to
+ * "party-declaration" — semantically correct since signatories are the
+ * agreement parties. See § 12.9 for mapping rationale.
+ *
+ * Position-dependent — scans only the last SIGNATURE_TAIL_RATIO of the
+ * text. A full-document scan would produce noise on title-case prose in
+ * body paragraphs.
+ */
+
+import type {
+  StructuralDefinition,
+  StructuralParser,
+} from "../../_framework/types.js";
+
+/** Signature region = last SIGNATURE_TAIL_RATIO of the text. */
+const SIGNATURE_TAIL_RATIO = 0.2;
+
+/** Minimum text length before the signature scan runs (avoid tiny fixtures). */
+const MIN_TEXT_LENGTH = 200;
+
+export const SIGNATURE_BLOCK: StructuralParser = {
+  id: "structural.signature-block",
+  category: "structural",
+  subcategory: "signature-block",
+  languages: ["ko", "en"],
+  description:
+    "Extracts signatory name/title pairs from the last 20% of the document (signature region)",
+  parse(text: string): readonly StructuralDefinition[] {
+    if (text.length < MIN_TEXT_LENGTH) return [];
+
+    // Restrict scan to the signature region.
+    const tailStart = Math.floor(text.length * (1 - SIGNATURE_TAIL_RATIO));
+    const tail = text.slice(tailStart);
+
+    const out: StructuralDefinition[] = [];
+
+    // English: Name: John Smith
+    const englishName =
+      /Name\s*:\s*([A-Z][A-Za-z.\-]+(?:\s+[A-Z][A-Za-z.\-]+){0,2})/g;
+    let m: RegExpExecArray | null;
+    while ((m = englishName.exec(tail)) !== null) {
+      out.push({
+        label: "Signatory",
+        referent: m[1]!.trim(),
+        source: "party-declaration",
+      });
+    }
+
+    // English: Title: CEO / Title: Chief Executive Officer
+    const englishTitle = /Title\s*:\s*([A-Z][A-Za-z\s.\-]{2,40})/g;
+    while ((m = englishTitle.exec(tail)) !== null) {
+      out.push({
+        label: "Title",
+        referent: m[1]!.trim(),
+        source: "party-declaration",
+      });
+    }
+
+    // Korean: 대표이사 김철수 (in signature context)
+    const koreanTitleName =
+      /(?<![가-힣A-Za-z])(대표이사|대표|부사장|사장|이사|본부장|팀장)\s+([가-힣]{2,4})(?![가-힣])/g;
+    while ((m = koreanTitleName.exec(tail)) !== null) {
+      out.push({
+        label: m[1]!,
+        referent: m[2]!,
+        source: "party-declaration",
+      });
+    }
+
+    // Korean: 이름: 김철수
+    const koreanName = /이름\s*:\s*([가-힣]{2,4})(?![가-힣])/g;
+    while ((m = koreanName.exec(tail)) !== null) {
+      out.push({
+        label: "이름",
+        referent: m[1]!,
+        source: "party-declaration",
+      });
+    }
+
+    return out;
+  },
+};
+```
+
+**Matches (positive test cases):**
+- `"... [long body] ... Name: John Smith\nTitle: CEO"` → two definitions (Signatory + Title)
+- `"... [long body] ... 대표이사 김철수 (서명)"` → `{label: "대표이사", referent: "김철수", source: "party-declaration"}`
+- `"... [long body] ... 이름: 박영희"` → `{label: "이름", referent: "박영희", source: "party-declaration"}`
+
+**Rejects:**
+- Short text (< 200 chars) → `[]` (no signature region)
+- Name/title patterns in body text (first 80% of text) → not extracted (out of region)
+- `"Name: john smith"` (lowercase) → no match (regex requires capital first letter)
+
+**Position-dependency test.** A fixture with `"대표이사 김철수"` in the FIRST paragraph AND nothing in the tail should return `[]`. A fixture with the same phrase in the LAST paragraph should return one definition. This is how the position-dependency test validates the tail-scan behavior.
+
+### 12.5 `party-declaration.ts`
+
+**Purpose.** Extract contracting parties from the opening "by and between" / "사이에" clause at the top of the document.
+
+**Full file content.** Put this EXACTLY into `src/detection/rules/structural/party-declaration.ts`:
+
+```typescript
+/**
+ * Structural parser: party-declaration extraction.
+ *
+ * Extracts contracting parties from the opening clause of a contract:
+ *
+ *   English:
+ *     "This Agreement is made by and between ABC Corporation,
+ *      a Delaware corporation (hereinafter 'Buyer'), and XYZ Inc.,
+ *      a California corporation (hereinafter 'Seller')."
+ *
+ *   Korean:
+ *     "본 계약은 A 주식회사(이하 '갑')와 B 주식회사(이하 '을') 사이에..."
+ *
+ * Output: StructuralDefinition[] with source = "party-declaration".
+ * label = role (Buyer / Seller / 갑 / 을 / 매수인 / 매도인)
+ * referent = full entity name (ABC Corporation / A 주식회사)
+ *
+ * Position-dependent — scans only the first HEADER_SCAN_LIMIT characters.
+ */
+
+import type {
+  StructuralDefinition,
+  StructuralParser,
+} from "../../_framework/types.js";
+
+/** Scan only the first HEADER_SCAN_LIMIT chars. */
+const HEADER_SCAN_LIMIT = 2000;
+
+export const PARTY_DECLARATION: StructuralParser = {
+  id: "structural.party-declaration",
+  category: "structural",
+  subcategory: "party-declaration",
+  languages: ["ko", "en"],
+  description:
+    "Extracts contracting parties from the opening 'by and between' / '사이에' clause in the first 2000 characters",
+  parse(text: string): readonly StructuralDefinition[] {
+    if (text.length === 0) return [];
+
+    const head = text.slice(0, HEADER_SCAN_LIMIT);
+
+    const out: StructuralDefinition[] = [];
+
+    // English: "ABC Corporation ... (hereinafter 'Buyer')"
+    // Non-greedy gap between the entity and the hereinafter clause handles
+    // intermediate descriptions like ", a Delaware corporation".
+    const english =
+      /([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,4})[^.()]{0,200}?\(\s*hereinafter(?:\s+referred\s+to)?\s+as\s+['"]([^'"]+)['"]\s*\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = english.exec(head)) !== null) {
+      out.push({
+        label: m[2]!,
+        referent: m[1]!.trim(),
+        source: "party-declaration",
+      });
+    }
+
+    // Korean: "A 주식회사(이하 '갑')" / "A 주식회사(이하 "갑"이라 함)"
+    const korean =
+      /([가-힣A-Za-z0-9][가-힣A-Za-z0-9\s]{0,30}?주식회사)\s*\(\s*이하\s*['"]?([가-힣A-Za-z0-9]+)['"]?(?:(?:라|이)\s*함)?\s*\)/g;
+    while ((m = korean.exec(head)) !== null) {
+      out.push({
+        label: m[2]!.trim(),
+        referent: m[1]!.trim(),
+        source: "party-declaration",
+      });
+    }
+
+    return out;
+  },
+};
+```
+
+**Matches:**
+- `"This Agreement is made by and between ABC Corporation, a Delaware corporation (hereinafter 'Buyer'), and XYZ Inc. (hereinafter 'Seller')."` → two definitions: `{Buyer → ABC Corporation}`, `{Seller → XYZ Inc.}`
+- `"본 계약은 A 주식회사(이하 '갑')와 B 주식회사(이하 '을') 사이에..."` → two definitions: `{갑 → A 주식회사}`, `{을 → B 주식회사}`
+- `"A 주식회사(이하 \"매수인\"이라 함)"` → `{매수인 → A 주식회사}`
+
+**Rejects:**
+- Empty text → `[]`
+- `"by and between ABC"` (no hereinafter) → no match
+- `"(hereinafter 'Buyer')"` at position 3000 (outside scan region) → no match
+
+**Position-dependency test.** A fixture with party declaration in first 2000 chars extracts correctly. A fixture with the SAME party declaration pushed beyond 2000 chars returns `[]` from this parser.
+
+**ReDoS notes.** The `[^.()]{0,200}?` non-greedy gap between entity and hereinafter is bounded at 200 chars and non-greedy, so backtracking is limited. The English entity repetition `{0,4}` is capped. Passes the 100ms parser budget.
+
+### 12.6 `recitals.ts`
+
+**Purpose.** Extract entity mentions from WHEREAS recitals (English) and 전문 / 배경 sections (Korean). These recitals typically appear between the party-declaration and the operative clauses.
+
+**Full file content.** Put this EXACTLY into `src/detection/rules/structural/recitals.ts`:
+
+```typescript
+/**
+ * Structural parser: recitals section extraction.
+ *
+ * Extracts entity mentions from the recitals block of a contract:
+ *
+ *   English:
+ *     "WHEREAS, ABC Corporation is engaged in ...;
+ *      WHEREAS, the Parties wish to ..."
+ *
+ *   Korean:
+ *     "전문
+ *      본 계약은 A 주식회사와 B 주식회사 사이의 협력에 관한 ..."
+ *
+ * Output: StructuralDefinition[] with source = "recitals".
+ * label is empty (recitals introduce entities, not labels).
+ * referent is the captured entity name.
+ *
+ * Position-dependent — scans only the first RECITAL_SCAN_LIMIT characters.
+ */
+
+import type {
+  StructuralDefinition,
+  StructuralParser,
+} from "../../_framework/types.js";
+
+/** Recitals should not span the entire document — cap the scan. */
+const RECITAL_SCAN_LIMIT = 5000;
+
+export const RECITALS: StructuralParser = {
+  id: "structural.recitals",
+  category: "structural",
+  subcategory: "recitals",
+  languages: ["ko", "en"],
+  description:
+    "Extracts entity mentions from WHEREAS clauses (English) and 전문/배경 sections (Korean) in the first 5000 characters",
+  parse(text: string): readonly StructuralDefinition[] {
+    if (text.length === 0) return [];
+
+    const head = text.slice(0, RECITAL_SCAN_LIMIT);
+
+    const out: StructuralDefinition[] = [];
+
+    // English: WHEREAS, ABC Corporation ...
+    const english =
+      /WHEREAS\s*,\s*([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,4})/g;
+    let m: RegExpExecArray | null;
+    while ((m = english.exec(head)) !== null) {
+      out.push({
+        label: "",
+        referent: m[1]!.trim(),
+        source: "recitals",
+      });
+    }
+
+    // Korean: 전문 / 배경 followed by 주식회사 entities within 500 chars
+    const koreanPreamble =
+      /(?:전문|배경)[\s\S]{0,500}?([가-힣][가-힣A-Za-z0-9]*\s*주식회사)/g;
+    while ((m = koreanPreamble.exec(head)) !== null) {
+      out.push({
+        label: "",
+        referent: m[1]!.trim(),
+        source: "recitals",
+      });
+    }
+
+    return out;
+  },
+};
+```
+
+**Matches:**
+- `"WHEREAS, ABC Corporation is engaged in manufacturing; WHEREAS, XYZ Inc. is a distributor;"` → two definitions (one per WHEREAS)
+- `"전문\n본 계약은 A 주식회사와 B 주식회사 사이의 협력에 관한 것이다"` → one definition (first 주식회사 match after 전문)
+
+**Rejects:**
+- `"WHEREAS"` alone (no entity) → no match
+- Recital content beyond first 5000 chars → not scanned
+
+**Empty label rationale.** Unlike definition-section which captures both sides of `"X" means Y`, recitals just mention entities without introducing short-form labels. The parser emits `label: ""` and the entity as the referent. Downstream heuristics treat empty-label definitions as entity-presence markers, not label-resolution targets.
+
+**ReDoS notes.** The `[\s\S]{0,500}?` gap is bounded and non-greedy. The 500-char window is enough to span a preamble paragraph without allowing runaway matching. Passes the 100ms parser budget.
+
+### 12.7 `header-block.ts`
+
+**Purpose.** Extract the document title and agreement type from the first few lines.
+
+**Source mapping.** Titles map to `source: "definition-section"` (the title is a document-level definition of the agreement type). See § 12.9 for the full rationale.
+
+**Full file content.** Put this EXACTLY into `src/detection/rules/structural/header-block.ts`:
+
+```typescript
+/**
+ * Structural parser: document header block extraction.
+ *
+ * Extracts the document title from the first few lines. Typical patterns:
+ *
+ *   English:
+ *     "NON-DISCLOSURE AGREEMENT"
+ *     "MASTER SERVICES AGREEMENT"
+ *
+ *   Korean:
+ *     "비밀유지계약서"
+ *     "주식매매계약서"
+ *
+ * Output: StructuralDefinition[] with source = "definition-section".
+ * label = "document-title" (fixed), referent = the extracted title string.
+ *
+ * Source mapping: "header-block" is NOT in the StructuralDefinition source
+ * union, so headers map to "definition-section" — the title functions as a
+ * document-level definition of the agreement type. See § 12.9 for rationale.
+ *
+ * Position-dependent — scans only the first HEADER_SCAN_LIMIT characters.
+ */
+
+import type {
+  StructuralDefinition,
+  StructuralParser,
+} from "../../_framework/types.js";
+
+const HEADER_SCAN_LIMIT = 500;
+
+export const HEADER_BLOCK: StructuralParser = {
+  id: "structural.header-block",
+  category: "structural",
+  subcategory: "header-block",
+  languages: ["ko", "en"],
+  description:
+    "Extracts document title (agreement type) from the first 500 characters",
+  parse(text: string): readonly StructuralDefinition[] {
+    if (text.length === 0) return [];
+
+    const head = text.slice(0, HEADER_SCAN_LIMIT);
+
+    const out: StructuralDefinition[] = [];
+
+    // English: all-caps title containing AGREEMENT / CONTRACT / MOU
+    const english = /(?<![A-Za-z])([A-Z][A-Z\s\-]{3,60}?(?:AGREEMENT|CONTRACT|MOU))(?![A-Za-z])/;
+    const engMatch = head.match(english);
+    if (engMatch) {
+      out.push({
+        label: "document-title",
+        referent: engMatch[1]!.trim(),
+        source: "definition-section",
+      });
+    }
+
+    // Korean: title ending in 계약서 / 합의서 / 각서 / 협정서
+    const korean =
+      /(?<![가-힣])([가-힣][가-힣A-Za-z0-9]{1,30}?(?:계약서|합의서|각서|협정서))(?![가-힣])/;
+    const koMatch = head.match(korean);
+    if (koMatch) {
+      out.push({
+        label: "document-title",
+        referent: koMatch[1]!.trim(),
+        source: "definition-section",
+      });
+    }
+
+    return out;
+  },
+};
+```
+
+**Matches:**
+- `"NON-DISCLOSURE AGREEMENT\n\nThis Agreement ..."` → `{label: "document-title", referent: "NON-DISCLOSURE AGREEMENT", source: "definition-section"}`
+- `"MASTER SERVICES AGREEMENT\n..."` → title extracted
+- `"비밀유지계약서\n본 계약은 ..."` → `{label: "document-title", referent: "비밀유지계약서", source: "definition-section"}`
+
+**Rejects:**
+- `"This Agreement"` (not all-caps) — no match on English branch
+- `"계약이 체결되었다"` (no title) — no match on Korean branch
+- Title beyond 500 chars → not scanned
+
+**One match per branch.** The regex is NOT `/g` — uses `String.match()` which returns only the first match. Headers have exactly one title; multiple matches would be noise.
+
+**ReDoS notes.** Non-greedy repetition `{3,60}?` and `{1,30}?` capped. Passes the 100ms parser budget.
+
+### 12.8 `structural/index.ts` — aggregator
+
+**Purpose.** Re-export all 5 parsers as a single array so `registry.ts` can import `ALL_STRUCTURAL_PARSERS` from one location.
+
+**Full file content.** Put this EXACTLY into `src/detection/rules/structural/index.ts` (replacing the empty-array scaffold from § 7.9):
+
+```typescript
+/**
+ * Structural parsers aggregator.
+ *
+ * Re-exports every StructuralParser in this directory as a single
+ * `ALL_STRUCTURAL_PARSERS` array. This array is consumed by
+ * `_framework/registry.ts` to populate the runner's default parser list.
+ *
+ * Parser order matters: downstream heuristics iterate this array and
+ * later parsers' definitions can shadow earlier ones if the label is
+ * identical. Current order is definition-section first (most authoritative)
+ * then party-declaration, recitals, signature-block, header-block.
+ */
+
+import type { StructuralParser } from "../../_framework/types.js";
+
+import { DEFINITION_SECTION } from "./definition-section.js";
+import { HEADER_BLOCK } from "./header-block.js";
+import { PARTY_DECLARATION } from "./party-declaration.js";
+import { RECITALS } from "./recitals.js";
+import { SIGNATURE_BLOCK } from "./signature-block.js";
+
+export const ALL_STRUCTURAL_PARSERS: readonly StructuralParser[] = [
+  DEFINITION_SECTION,
+  PARTY_DECLARATION,
+  RECITALS,
+  SIGNATURE_BLOCK,
+  HEADER_BLOCK,
+] as const;
+```
+
+### 12.9 Source-mapping rationale (why signature → party, header → definition)
+
+The `StructuralDefinition.source` union is locked by Phase 0 types.ts to three values: `"definition-section"`, `"recitals"`, `"party-declaration"`. Phase 1 § 6 forbids modification of this union (no new type exports; "exact shapes" preserved).
+
+Five parsers need source values. The mapping is:
+
+| Parser | Semantic source | Mapped source | Rationale |
+|---|---|---|---|
+| definition-section | definition-section | `"definition-section"` | Direct match |
+| party-declaration | party-declaration | `"party-declaration"` | Direct match |
+| recitals | recitals | `"recitals"` | Direct match |
+| signature-block | signature-block | `"party-declaration"` | Signatories ARE the parties to the agreement — the signature block is a second surface on which party identity is declared. Semantically equivalent for D9 purposes. |
+| header-block | header-block | `"definition-section"` | The document title functions as a top-level definition of the agreement type. Downstream consumers treat it as a scope marker, not a mandatory match. |
+
+**Downstream impact.** The `source` field is consumed by § 14 heuristics as a provenance signal. Phase 1 heuristics do NOT apply provenance-weighted confidence — they use the union of all structural definitions as context for D9 awareness, treating all sources equally. So the mapping is observationally lossless for Phase 1. A future phase that introduces provenance-weighted confidence MAY wish to extend the source union; that extension belongs to a separate review cycle and should go through plan-eng-review.
+
+**DO NOT extend the source union in Phase 1.** The mapping above is the approved workaround. Adding `"signature-block"` and `"header-block"` to the union would modify a Phase 0 type, triggering a cascading rewrite of every file that imports `StructuralDefinition` plus the Phase 0 characterization tests.
+
+### 12.10 Test file specifications
+
+Create one test file per parser:
+
+- `src/detection/rules/structural/definition-section.test.ts`
+- `src/detection/rules/structural/signature-block.test.ts`
+- `src/detection/rules/structural/party-declaration.test.ts`
+- `src/detection/rules/structural/recitals.test.ts`
+- `src/detection/rules/structural/header-block.test.ts`
+
+Per RULES_GUIDE § 5.4 (structural parser testing) plus RULES_GUIDE § 8.1 (minimum test set adapted for parsers), each parser test file has at least:
+
+- **3 positive tests** — documents with the parser's target patterns return the expected definitions
+- **3 variant tests** — whitespace, language variants, alternation-order cases
+- **3 position-dependency tests** — pattern outside the scan region returns empty; pattern inside returns matches; boundary case at exactly `limit - 1` chars
+- **3 reject tests** — malformed input, empty text, patterns that should not match
+- **1 ReDoS adversarial test** — 10KB pathological input, 100ms budget per parser (§ 7.1 invariant)
+
+**Total per parser:** 13 tests minimum. **Five parsers × 13 = 65 tests minimum.** Target ~75 to cover edge cases around the source-mapping rationale (signature-block assigned to party-declaration source — explicit tests for that).
+
+**Shared test helper:**
+
+```typescript
+import { describe, expect, it } from "vitest";
+
+import type { StructuralDefinition } from "../../_framework/types.js";
+
+import { DEFINITION_SECTION } from "./definition-section.js";
+
+function parseOne(text: string): readonly StructuralDefinition[] {
+  return DEFINITION_SECTION.parse(text);
+}
+
+describe("structural.definition-section", () => {
+  it("extracts English 'X means Y'", () => {
+    const result = parseOne('"Buyer" means ABC Corporation.');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      label: "Buyer",
+      referent: "ABC Corporation",
+      source: "definition-section",
+    });
+  });
+
+  // ... 12+ more tests per the test plan above
+});
+```
+
+**Source-mapping regression test (signature-block and header-block):**
+
+```typescript
+describe("structural.signature-block", () => {
+  it("emits party-declaration source (not signature-block)", () => {
+    const tail =
+      "x".repeat(300) + "\n\nName: John Smith\nTitle: CEO";
+    const result = SIGNATURE_BLOCK.parse(tail);
+    for (const def of result) {
+      // Contract enforced by § 12.9 — source MUST be one of the 3 allowed values.
+      expect(def.source).toBe("party-declaration");
+    }
+  });
+});
+
+describe("structural.header-block", () => {
+  it("emits definition-section source (not header-block)", () => {
+    const result = HEADER_BLOCK.parse("NON-DISCLOSURE AGREEMENT\n\nBody...");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.source).toBe("definition-section");
+  });
+});
+```
+
+These two tests guard the source-mapping decision from § 12.9 — if a future refactor accidentally adds `"signature-block"` to the source union and updates the parser output, these tests fail and force a review re-opener.
+
+### 12.11 Registry integration
+
+Replace the empty-array scaffold at `src/detection/rules/structural/index.ts` (created in § 7.9) with the populated version from § 12.8. No change to `_framework/registry.ts` itself — the import line already exists from the § 7.9 runner-extension commit:
+
+```typescript
+// Already in registry.ts from § 7.9:
+import { ALL_STRUCTURAL_PARSERS as _STRUCTURAL } from "../rules/structural/index.js";
+// ... export unchanged:
+export const ALL_STRUCTURAL_PARSERS: readonly StructuralParser[] = _STRUCTURAL;
+```
+
+After the § 12 commit, the `_STRUCTURAL` import resolves to the populated array from § 12.8 (5 parsers) instead of the empty scaffold.
+
+### 12.12 Acceptance checklist for § 12
+
+- [ ] `src/detection/rules/structural/definition-section.ts` exists and exports `DEFINITION_SECTION: StructuralParser`
+- [ ] `src/detection/rules/structural/signature-block.ts` exists and exports `SIGNATURE_BLOCK: StructuralParser`
+- [ ] `src/detection/rules/structural/party-declaration.ts` exists and exports `PARTY_DECLARATION: StructuralParser`
+- [ ] `src/detection/rules/structural/recitals.ts` exists and exports `RECITALS: StructuralParser`
+- [ ] `src/detection/rules/structural/header-block.ts` exists and exports `HEADER_BLOCK: StructuralParser`
+- [ ] `src/detection/rules/structural/index.ts` re-exports all 5 parsers as `ALL_STRUCTURAL_PARSERS` (no longer the empty-array scaffold)
+- [ ] Every parser's `id` starts with `"structural."`
+- [ ] Every parser has `category: "structural"`
+- [ ] Every parser's `parse` function is a pure function (no `Date.now`, no `Math.random`, no module state)
+- [ ] Every parser's `description` field documents its scan region when position-dependent (parsers 2–5)
+- [ ] Signature-block parser emits `source: "party-declaration"` for ALL its definitions (never `"signature-block"`)
+- [ ] Header-block parser emits `source: "definition-section"` for ALL its definitions (never `"header-block"`)
+- [ ] No parser's output type uses a source value outside `"definition-section" | "recitals" | "party-declaration"`
+- [ ] Each parser's test file has ≥ 13 tests, all passing
+- [ ] Source-mapping regression tests for signature-block and header-block exist (per § 12.10)
+- [ ] Position-dependency tests for parsers 2–5 pass (pattern outside scan region returns empty)
+- [ ] `bun run test src/detection/detect-pii.characterization.test.ts` still passes byte-for-byte (parsers do not affect regex-phase output)
+- [ ] `bun run test src/detection/detect-pii.integration.test.ts` still passes
+- [ ] `bun run test` overall test count increases by ≥ 65 (5 parsers × 13 tests)
+- [ ] ReDoS guard fuzz passes for all 5 parsers (100ms budget per parser per § 3 invariant 13)
+- [ ] `ALL_STRUCTURAL_PARSERS` has length 5
+- [ ] `runAllPhases` on the bilingual worst-case fixture now returns non-empty `structuralDefinitions` (smoke test — the fixture has a "by and between" clause that `party-declaration` should catch)
+- [ ] No parser imports `src/propagation/defined-terms.ts` or `src/propagation/definition-clauses.ts` (they are Lane C, not framework)
+- [ ] No new npm dependencies
+- [ ] No edits to any Phase 0 file (structural parsers live entirely in new files under `rules/structural/`)
+
+---
+
 ## RESUME POINTER (for Claude in the next session)
 
-**Status as of 2026-04-12 v6 (session +3 first half):** § 0–11 written. § 12–18 pending.
+**Status as of 2026-04-12 v7 (session +3 second half):** § 0–12 written. § 13–18 pending.
 
 ### What is already written (do NOT rewrite)
 
@@ -3779,10 +4542,11 @@ export const ALL_REGEX_RULES: readonly RegexRule[] = [
 - **§ 9** — `rules/financial.ts`: 10 regex rules (won-amount, won-unit, won-formal, usd-symbol, usd-code, foreign-symbol, foreign-code, percentage, fraction-ko, amount-context-ko); normalization assumption guide; complete file content with two post-filter helpers (wonAmountInRange, percentageInRange); per-rule deep dive for each of the 10 rules covering matches/variants/boundaries/rejects/ReDoS/level-rationale/known-false-positives; 130-test minimum plan with ★★★ quality rubric; `registry.ts` diff; 18-item acceptance checklist
 - **§ 10** — `rules/temporal.ts`: 8 regex rules (date-ko-full, date-ko-short, date-ko-range, date-iso, date-en, duration-ko, duration-en, date-context-ko); `isValidCalendarDate` helper with Date constructor roll-over detection for leap years and month-specific day counts; `validNumericDate` + `validEnglishDate` post-filters with `MONTH_NAME_TO_NUM` table; per-rule deep dive for each of the 8 rules; 104-test minimum plan with calendar-validity tests (Feb 30, Feb 29 leap/non-leap, April 31); `registry.ts` diff; 21-item acceptance checklist
 - **§ 11** — `rules/entities.ts`: 12 regex rules split by language — Korean (6): `ko-corp-prefix`, `ko-corp-suffix`, `ko-corp-abbrev` (matches both `(주)` and `㈜`), `ko-legal-other`, `ko-title-name`, `ko-honorific`; English (6): `en-corp-suffix`, `en-legal-form`, `en-title-person`, `en-exec-title`, `ko-identity-context`, `en-identity-context`; NO post-filters (context-free by design, role blacklist deferred to § 14); alternation-order notes for `대표이사` vs `대표`, `유한책임회사` vs `유한회사`, `Vice President` vs `President`; regex→heuristic contract tests for common-word false positives; 156-test minimum plan; `registry.ts` diff; 22-item acceptance checklist
+- **§ 12** — `rules/structural/` (5 parsers): `definition-section.ts` (English `"X" means Y` + Korean `"X"이라 함은 Y` + `이하 "X"` forms with referent trimming), `signature-block.ts` (last-20% tail scan for Name/Title/대표이사 patterns), `party-declaration.ts` (first-2000-char scan for `by and between ... (hereinafter 'X')` and Korean `(이하 '갑')` forms), `recitals.ts` (first-5000-char scan for WHEREAS and 전문/배경 entity mentions), `header-block.ts` (first-500-char scan for document title ending in AGREEMENT/CONTRACT/계약서/합의서); `structural/index.ts` aggregator re-exporting 5 parsers as `ALL_STRUCTURAL_PARSERS`; § 12.9 source-mapping rationale (signature-block → `"party-declaration"`, header-block → `"definition-section"`) with regression tests to guard the mapping; 65-test minimum plan (13 × 5); 27-item acceptance checklist
 
 ### What is pending (write in this order, across future sessions)
 
-Each section estimate is rough. Total pending: ~2100 lines (§ 6–11 complete, approximately 3300 lines added across sessions +1, +2, +3).
+Each section estimate is rough. Total pending: ~1200 lines (§ 6–12 complete, approximately 4200 lines added across sessions +1, +2, +3).
 
 | § | Content | Est. lines | Order |
 |---|---|---:|---:|
@@ -3792,6 +4556,7 @@ Each section estimate is rough. Total pending: ~2100 lines (§ 6–11 complete, 
 | ~~9~~ | ~~`rules/financial.ts` — 10 regex rules (KRW × 3, USD × 2, foreign × 2, percentage, fraction, context scanner)~~ — **DONE session +2** | ~700 | ✓ |
 | ~~10~~ | ~~`rules/temporal.ts` — 8 regex rules (Korean full/short/range dates, ISO, English date, Korean/English duration, label-driven date context)~~ — **DONE session +2** | ~550 | ✓ |
 | ~~11~~ | ~~`rules/entities.ts` — 12 regex rules (Korean × 6: corp-prefix/suffix/abbrev, legal-other, title-name, honorific; English × 6: corp-suffix, legal-form, title-person, exec-title, ko-identity-context, en-identity-context)~~ — **DONE session +3** | ~700 | ✓ |
+| ~~12~~ | ~~`rules/structural/` — 5 parsers (definition-section, signature-block, party-declaration, recitals, header-block) + index.ts aggregator + source-mapping rationale~~ — **DONE session +3** | ~900 | ✓ |
 | 10 | `rules/temporal.ts` — 8 regex rules. Korean date (2024년 3월 15일, 2024.3.15), Korean short date, Korean date range, ISO date, English date, Korean duration (3년간, 6개월, 90일), English duration, temporal context scanner. | ~500 | Session +2 |
 | 11 | `rules/entities.ts` — 12 regex rules. Korean corporate suffix (주식회사 X / X 주식회사 / (주)X), Korean legal forms (유한회사, 합자회사, 사단법인), Korean title+name (대표이사 김철수, 이사 박영희), English corporate suffix (Corp/Inc/LLC/Ltd/Co), English legal forms (GmbH/S.A./NV/PLC/Pty), English title+name (Mr./Dr./CEO + Name), Korean honorifics, identity context scanner. | ~700 | Session +2 |
 | 12 | `rules/structural/` — 5 parsers. Each parser has its own .ts file with StructuralParser implementation + top-of-file JSDoc with rationale. definition-section (Korean + English), signature-block (By:, 이름:, 대표이사), party-declaration (first-para scan), recitals (WHEREAS, 전문), header-block (title, execution date, document number). Plus `index.ts` re-exporting `ALL_STRUCTURAL_PARSERS`. | ~900 | Session +3 |
@@ -3847,19 +4612,19 @@ Phase 1 brief does NOT address UI. It only ensures `engine.ts` adds `nonPiiCandi
 
 ### Next session startup checklist
 
-1. Open this file and confirm the "PARTIAL DRAFT" warning is still at the top — it should now say "§ 0–11 written".
+1. Open this file and confirm the "PARTIAL DRAFT" warning is still at the top — it should now say "§ 0–12 written".
 2. Read `../document-redactor-private-notes/session-log-2026-04-11-v2.md` for the full review context.
-3. Read the 4 external feedback files in repo root (`ChatGPT 5.4 Pro Feedback_1.md`, `_2.md`, `Codex Feedback.md`) — these are the quality bar for rule authoring, especially for § 12–14 per-category rule drafting.
-4. Verify `git log --oneline -8` shows the session-+1 / +2 / +3 commits adding § 6–11 after `e41d842 docs(phases): start phase-1 rulebook brief §0-5 (PARTIAL DRAFT)`.
+3. Read the 4 external feedback files in repo root (`ChatGPT 5.4 Pro Feedback_1.md`, `_2.md`, `Codex Feedback.md`) — these are the quality bar for rule authoring, especially for § 13–14 per-category rule drafting.
+4. Verify `git log --oneline -9` shows the session-+1 / +2 / +3 commits adding § 6–12 after `e41d842 docs(phases): start phase-1 rulebook brief §0-5 (PARTIAL DRAFT)`.
 5. Verify `bun run test` still shows 422 passing (Phase 0 has not been executed by Codex yet — these are still the v1.0 legacy tests).
-6. **Before starting § 12:** read RULES_GUIDE § 5 (Writing a structural parser) carefully. Structural parsers have a DIFFERENT shape from regex rules — they export a `parse(text)` function, return `StructuralDefinition[]` not `Candidate[]`, and are not level-filtered. Model § 12.1 through § 12.5 on RULES_GUIDE § 5's example parser. Then write § 12 (structural parsers, ~900) → § 13 (legal, ~400 — same shape as § 9/10/11, easy) → § 14 (heuristics, ~700 — requires RULES_GUIDE § 6 as reference).
+6. Start writing § 13 (`rules/legal.ts` — 6 regex rules, ~400 lines — reuses § 9/10/11 template) → § 14 (heuristics + role blacklists, ~700 lines — **before writing, read RULES_GUIDE § 6** for the heuristic shape, especially § 6.2 required behaviors). § 14 has a DIFFERENT shape from regex rules (similar to § 12 parsers — exports a `detect(text, ctx)` function that consumes `HeuristicContext`, returns `Candidate[]`). § 14 also creates `rules/role-blacklist-ko.ts` + `rules/role-blacklist-en.ts` (pure data files, ~50 entries each).
 7. After each section: `wc -l docs/phases/phase-1-rulebook.md`, commit with a message like `docs(phases): phase-1 brief § 11 entities rules (partial)`.
 8. Continue across sessions until every section is written, then remove the "PARTIAL DRAFT" warning at the top as the final commit of the brief-authoring stream.
 
 ### Do NOT in future sessions
 
 - Do NOT re-run plan-eng-review on this brief. The review is complete.
-- Do NOT rewrite § 0–11. They are locked. § 6–8 specify exact TypeScript for the framework extension surface. § 9 specifies exact regex sources for the 10 financial rules. § 10 specifies exact regex sources for the 8 temporal rules plus the `isValidCalendarDate` / `validNumericDate` / `validEnglishDate` post-filters. § 11 specifies exact regex sources for the 12 entity rules with deliberately context-free semantics (role-blacklist suppression happens in § 14 heuristics, not here). Do not "improve", "tune", rename, or refactor any of these without a ReDoS re-audit and a plan-eng-review re-opener.
+- Do NOT rewrite § 0–12. They are locked. § 6–8 specify exact TypeScript for the framework extension surface. § 9 specifies exact regex sources for the 10 financial rules. § 10 specifies exact regex sources for the 8 temporal rules plus calendar-validation post-filters. § 11 specifies exact regex sources for the 12 entity rules with deliberately context-free semantics. § 12 specifies exact TypeScript for the 5 structural parsers with the source-mapping rationale for signature-block and header-block (mapped to the locked 3-value source union). Do not "improve", "tune", rename, refactor, or extend the source union without a ReDoS re-audit and a plan-eng-review re-opener.
 - Do NOT hand the brief to Codex until the "PARTIAL DRAFT" warning is removed.
 - Do NOT commit Phase 1 content changes to `src/` in the same session as brief authoring. This is a doc-only stream until the brief is complete.
 - Do NOT modify the Phase 0 brief again after commit 187b7f8. It is locked for Codex execution.
