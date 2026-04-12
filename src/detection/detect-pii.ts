@@ -32,6 +32,7 @@ import type JSZip from "jszip";
 import { extractTextFromZip } from "./extract-text.js";
 import { normalizeForMatching } from "./normalize.js";
 import { PII_KINDS, PII_PATTERNS, type PiiKind } from "./patterns.js";
+import { luhnCheck } from "./rules/luhn.js";
 import type { Scope } from "../docx/types.js";
 
 /**
@@ -137,27 +138,4 @@ export async function buildTargetsFromZip(zip: JSZip): Promise<string[]> {
   // contract: when two targets are both prefixes of the input, the longer
   // one should win.
   return [...set].sort((a, b) => b.length - a.length);
-}
-
-/**
- * Luhn / mod-10 check, used to validate credit card matches before they
- * become redaction targets. Operates on the digit characters of the input
- * (so it works for any spacing variant).
- */
-function luhnCheck(s: string): boolean {
-  let sum = 0;
-  let alt = false;
-  // Iterate from right to left.
-  for (let i = s.length - 1; i >= 0; i--) {
-    const c = s.charCodeAt(i);
-    if (c < 48 || c > 57) continue; // skip non-digits (spaces, hyphens)
-    let d = c - 48;
-    if (alt) {
-      d *= 2;
-      if (d > 9) d -= 9;
-    }
-    sum += d;
-    alt = !alt;
-  }
-  return sum > 0 && sum % 10 === 0;
 }
