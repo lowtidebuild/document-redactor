@@ -5,9 +5,9 @@
   type Props = {
     text: string;
     meta: string;
-    confidence?: number;
+    confidence?: number | undefined;
     isManual: boolean;
-    manualCategory?: ManualCategory;
+    manualCategory?: ManualCategory | undefined;
   };
 
   let {
