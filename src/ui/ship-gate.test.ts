@@ -32,6 +32,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import "../../tests/ui-state-shim.js";
+import { appState } from "./state.svelte.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -53,8 +55,6 @@ function loadFixtureFile(
   const bytes = Uint8Array.from(loadFixture(name));
   return new File([bytes.buffer], fileName);
 }
-
-type AppStateModule = typeof import("./state.svelte.ts");
 
 describe("ship gate — single-file build", () => {
   let html: string;
@@ -143,24 +143,6 @@ describe("ship gate — single-file build", () => {
 });
 
 describe("ship gate — manual candidate state flow", () => {
-  let appState: AppStateModule["appState"];
-
-  beforeAll(async () => {
-    const stateShim = Object.assign(
-      <T>(value: T): T => value,
-      {
-        eager: <T>(value: T): T => value,
-        raw: <T>(value: T): T => value,
-        snapshot: <T>(value: T): T => value,
-      },
-    );
-    const globalWithState = globalThis as typeof globalThis & {
-      $state?: typeof $state;
-    };
-    globalWithState.$state = stateShim as typeof $state;
-    ({ appState } = await import("./state.svelte.ts"));
-  });
-
   beforeEach(() => {
     appState.reset();
   });
