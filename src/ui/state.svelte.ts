@@ -63,6 +63,19 @@ export type AppPhase =
     };
 
 /**
+ * Category key for manual candidate additions. Matches the Phase 1
+ * `NonPiiCandidate.category` union plus "literals" for entity literal
+ * manual additions. Defined term labels have no manual-add affordance
+ * in Phase 2.
+ */
+export type ManualCategory =
+  | "literals"
+  | "financial"
+  | "temporal"
+  | "entities"
+  | "legal";
+
+/**
  * Default entity seeds — hardcoded to the ones in the worst-case
  * fixture so a first-time user can drop the fixture and see the full
  * candidates tree populate immediately. The UI lets them edit this
@@ -77,6 +90,16 @@ const DEFAULT_SEEDS = [
   "Project Falcon",
   "블루윙 2.0",
 ] as const;
+
+function createManualAdditions(): Map<ManualCategory, Set<string>> {
+  return new Map([
+    ["literals", new Set()],
+    ["financial", new Set()],
+    ["temporal", new Set()],
+    ["entities", new Set()],
+    ["legal", new Set()],
+  ]);
+}
 
 /** The singleton state object. Mutate via the verb functions below. */
 class AppState {
@@ -95,6 +118,15 @@ class AppState {
    */
   selections = $state<Set<string>>(new Set());
 
+  /**
+   * Manual candidate additions — user-typed strings grouped by category.
+   * Persists across re-analyses so a user who adds a missed string once
+   * sees it pre-checked when they drop another document.
+   */
+  manualAdditions = $state<Map<ManualCategory, Set<string>>>(
+    createManualAdditions(),
+  );
+
   // ── Verbs ────────────────────────────────────────────────────────
 
   async loadFile(file: File): Promise<void> {
@@ -102,7 +134,13 @@ class AppState {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const analysis = await analyzeZip(bytes, this.seeds);
-      this.selections = defaultSelections(analysis);
+      const baseSelections = defaultSelections(analysis);
+      for (const set of this.manualAdditions.values()) {
+        for (const text of set) {
+          baseSelections.add(text);
+        }
+      }
+      this.selections = baseSelections;
       this.phase = {
         kind: "postParse",
         fileName: file.name,
@@ -131,6 +169,29 @@ class AppState {
     return this.selections.has(text);
   }
 
+  addManualCandidate(category: ManualCategory, text: string): void {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return;
+    if (trimmed.length > 200) return;
+    const bucket = this.manualAdditions.get(category);
+    if (bucket === undefined) return;
+    if (bucket.has(trimmed)) return;
+    bucket.add(trimmed);
+    this.selections.add(trimmed);
+    this.manualAdditions = new Map(this.manualAdditions);
+    this.selections = new Set(this.selections);
+  }
+
+  removeManualCandidate(category: ManualCategory, text: string): void {
+    const bucket = this.manualAdditions.get(category);
+    if (bucket === undefined) return;
+    if (!bucket.has(text)) return;
+    bucket.delete(text);
+    this.selections.delete(text);
+    this.manualAdditions = new Map(this.manualAdditions);
+    this.selections = new Set(this.selections);
+  }
+
   async applyNow(): Promise<void> {
     if (this.phase.kind !== "postParse") return;
     const { fileName, bytes } = this.phase;
@@ -155,6 +216,7 @@ class AppState {
   reset(): void {
     this.phase = { kind: "idle" };
     this.selections = new Set();
+    this.manualAdditions = createManualAdditions();
   }
 
   setSeeds(next: ReadonlyArray<string>): void {

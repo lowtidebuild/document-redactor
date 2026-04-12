@@ -189,7 +189,7 @@ describe("defaultSelections — D9 policy", () => {
         },
       ],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    };
+    } satisfies Parameters<typeof defaultSelections>[0];
     const selections = defaultSelections(analysis);
     expect(selections.has("Acme Holdings")).toBe(false);
     expect(selections.has("50,000,000원")).toBe(true);
@@ -200,15 +200,20 @@ describe("defaultSelections — D9 policy", () => {
       entityGroups: [
         {
           seed: "ABC Corp",
-          literals: [{ text: "ABC Corporation", count: 1, scopes: [] }],
-          defined: [{ text: "the Buyer", count: 5, scopes: [] }],
-          variant: "exact" as const,
+          literals: [
+            {
+              text: "ABC Corporation",
+              kind: "literal" as const,
+              count: 1,
+            },
+          ],
+          defined: [{ text: "the Buyer", kind: "defined" as const, count: 5 }],
         },
       ],
       piiCandidates: [],
       nonPiiCandidates: [],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    };
+    } satisfies Parameters<typeof defaultSelections>[0];
     const selections = defaultSelections(analysis);
     expect(selections.has("ABC Corporation")).toBe(true);
     expect(selections.has("the Buyer")).toBe(false);
@@ -222,7 +227,7 @@ describe("defaultSelections — D9 policy", () => {
       ],
       nonPiiCandidates: [],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    };
+    } satisfies Parameters<typeof defaultSelections>[0];
     const selections = defaultSelections(analysis);
     expect(selections.has("user@example.com")).toBe(true);
   });
@@ -274,7 +279,7 @@ describe("defaultSelections — D9 policy", () => {
         },
       ],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    };
+    } satisfies Parameters<typeof defaultSelections>[0];
     const selections = defaultSelections(analysis);
     expect(selections.size).toBe(5);
   });
@@ -285,7 +290,7 @@ describe("defaultSelections — D9 policy", () => {
       piiCandidates: [],
       nonPiiCandidates: [],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    };
+    } satisfies Parameters<typeof defaultSelections>[0];
     expect(defaultSelections(analysis).size).toBe(0);
   });
 });
