@@ -23,7 +23,8 @@
  * (including all Phase 0 characterization tests) continues to use detect-pii.
  * This preserves the Phase 0 ship gate byte-for-byte.
  *
- * FAIL-LOUD: no try/catch anywhere in this file. A throwing rule, parser, or
+ * FAIL-LOUD: no exception-handling wrappers anywhere in this file. A
+ * throwing rule, parser, or
  * heuristic bubbles up as a stack trace. See phase-1-rulebook.md § 3
  * invariant 16 for rationale.
  *

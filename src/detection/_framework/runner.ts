@@ -60,7 +60,8 @@
  *      candidates freely. Dedup happens in `buildAllTargetsFromZip` per
  *      RULES_GUIDE § 12.9 "no early dedupe".
  *
- *   6. FAIL-LOUD at every step. No try/catch anywhere in this file. A
+ *   6. FAIL-LOUD at every step. No exception-handling wrappers anywhere in
+ *      this file. A
  *      throwing rule / parser / heuristic surfaces as a stack trace per
  *      design-v1 Lock-in #15 (zero-miss invariant). Callers that want
  *      best-effort semantics must wrap the call themselves — the runner
