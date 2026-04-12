@@ -11,8 +11,6 @@ import {
   detectAllInZip,
 } from "./detect-all.js";
 import { buildTargetsFromZip, detectPii } from "./detect-pii.js";
-import { extractTextFromZip } from "./extract-text.js";
-import { listScopes } from "../docx/scopes.js";
 import * as runner from "./_framework/runner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -455,7 +453,7 @@ describe("buildAllTargetsFromZip", () => {
     zip.file("word/document.xml", bodyWith("kim@abc.kr and 지분은 3분의 1이다."));
     const standard = await buildAllTargetsFromZip(zip, { level: "standard" });
     const paranoid = await buildAllTargetsFromZip(zip, { level: "paranoid" });
-    expect(paranoid).toEqual(expect.arrayContaining(standard));
+    expect(paranoid).toEqual(expect.arrayContaining([...standard]));
     expect(paranoid).toContain("3분의 1");
   });
 

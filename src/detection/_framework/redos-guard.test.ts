@@ -126,7 +126,7 @@ describe("ReDoS guard", () => {
 
   for (const parser of ALL_STRUCTURAL_PARSERS) {
     it(`${parser.id} returns within 100ms on structural adversarial input`, () => {
-      const input = PARSER_ADVERSARIAL_INPUTS[parser.id];
+      const input = PARSER_ADVERSARIAL_INPUTS[parser.id]!;
       const elapsed = benchmarkOperation(() => parser.parse(input));
       expect(elapsed).toBeLessThan(100);
     });
@@ -134,8 +134,8 @@ describe("ReDoS guard", () => {
 
   for (const heuristic of ALL_HEURISTICS) {
     it(`${heuristic.id} returns within 100ms on heuristic adversarial input`, () => {
-      const input = HEURISTIC_ADVERSARIAL_INPUTS[heuristic.id];
-      const context = HEURISTIC_CONTEXTS[heuristic.id];
+      const input = HEURISTIC_ADVERSARIAL_INPUTS[heuristic.id]!;
+      const context = HEURISTIC_CONTEXTS[heuristic.id]!;
       const elapsed = benchmarkOperation(() => heuristic.detect(input, context));
       expect(elapsed).toBeLessThan(100);
     });
