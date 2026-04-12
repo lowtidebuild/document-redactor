@@ -1,33 +1,60 @@
 <!--
-  Right panel — the candidates tree the user reviews before Apply.
+  Right panel — category-grouped review UI for the Phase 1 candidate tree.
 
-  Three groups, rendered in this order per the D9 policy and the D7
-  matrix:
+  Authoritative structural reference from session-log-2026-04-11-v2
+  ("Finding 1.3 — user insight"):
 
-    1. **Entity aliases — literal names** (auto-selected)
-       The identifying strings that actually reveal who the party is.
-       Checked by default, user can deselect individual items.
-
-    2. **Defined term labels** (default OFF)
-       Generic role words like "the Buyer", "매수인", "Discloser".
-       Unchecked by default so the output is AI-readable; user opts in
-       only for 3+ party contracts where leaving them intact would leak
-       by elimination.
-
-    3. **Auto-detected PII** (always on by default)
-       Emails, phones, 주민번호, 사업자번호, EIN, cards. Each entry
-       shows its regex category so the user can triage.
-
-  Each item is a clickable row with a checkbox, the string, a count,
-  and a short scope description. Click anywhere on the row → toggle.
-
-  The Apply button at the bottom calls `appState.applyNow()`. It is
-  **disabled** when `selections.size === 0` (no point running the
-  pipeline with nothing to redact) and when the phase is not postParse.
+  ┌─────────────────────────────────────┐
+  │  자동 감지됨 (Auto-detected)          │
+  │  ┌────────────┬─────────────────┐   │
+  │  │ 당사자       │ [✓] ABC 주식회사  │   │
+  │  │            │ [✓] 대표이사 김철수 │   │
+  │  │            │ [+ 추가]         │   │
+  │  ├────────────┼─────────────────┤   │
+  │  │ 식별번호     │ [✓] 123-45-67890│   │
+  │  │ (PII)      │ [✓] 12-3456789  │   │
+  │  ├────────────┼─────────────────┤   │
+  │  │ 금액        │ [✓] 50,000,000원│   │
+  │  │            │ [✓] USD 50,000  │   │
+  │  │            │ [+ 추가]         │   │
+  │  ├────────────┼─────────────────┤   │
+  │  │ 날짜 / 기간  │ [✓] 2024년 3월 15일│ │
+  │  │            │ [✓] 3년간        │   │
+  │  │            │ [+ 추가]         │   │
+  │  ├────────────┼─────────────────┤   │
+  │  │ 법원 / 사건  │ [ ] 서울중앙지방법원 │ │
+  │  │            │ [ ] 2023가합12345│   │
+  │  ├────────────┼─────────────────┤   │
+  │  │ 추측 (낮은   │ [ ] "Project Alpha"│ │
+  │  │ 신뢰도)     │ [ ] XYZ Company │   │
+  │  └────────────┴─────────────────┘   │
+  │  [+ 누락된 항목 직접 추가]              │
+  └─────────────────────────────────────┘
 -->
 <script lang="ts">
-  import type { PiiCandidate } from "./engine.ts";
+  import CategorySection from "./CategorySection.svelte";
+  import type { Analysis, PiiCandidate } from "./engine.ts";
   import { appState, type AppPhase } from "./state.svelte.ts";
+  import type { ManualCategory } from "./state.svelte.ts";
+
+  type CategoryCandidate = {
+    text: string;
+    meta: string;
+    confidence?: number | undefined;
+    isManual: boolean;
+    manualCategory?: ManualCategory | undefined;
+  };
+
+  type PanelSections = {
+    literals: CategoryCandidate[];
+    defined: CategoryCandidate[];
+    pii: CategoryCandidate[];
+    financial: CategoryCandidate[];
+    temporal: CategoryCandidate[];
+    entities: CategoryCandidate[];
+    legal: CategoryCandidate[];
+    heuristics: CategoryCandidate[];
+  };
 
   type Props = {
     phase: AppPhase;
@@ -35,32 +62,39 @@
 
   let { phase }: Props = $props();
 
-  /**
-   * Total across the current selection, for the footer "Selected N of M"
-   * row. Computed reactively so it updates when the user toggles any
-   * checkbox.
-   */
+  const EMPTY_SECTIONS: PanelSections = {
+    literals: [],
+    defined: [],
+    pii: [],
+    financial: [],
+    temporal: [],
+    entities: [],
+    legal: [],
+    heuristics: [],
+  };
+
   let selectedCount = $derived(appState.selections.size);
 
-  /**
-   * Total candidate count across literal + defined + PII, for the
-   * "Selected N of M" denominator.
-   */
-  let totalCount = $derived.by(() => {
-    if (phase.kind !== "postParse") return 0;
-    const entityTotal = phase.analysis.entityGroups.reduce(
-      (sum, g) => sum + g.literals.length + g.defined.length,
-      0,
-    );
-    return entityTotal + phase.analysis.piiCandidates.length;
+  let sections = $derived.by(() => {
+    if (phase.kind !== "postParse") return EMPTY_SECTIONS;
+    return buildSections(phase.analysis);
   });
 
-  /** The Apply button is disabled unless we're in postParse with ≥1 selection. */
+  let totalCount = $derived(
+    sections.literals.length +
+      sections.defined.length +
+      sections.pii.length +
+      sections.financial.length +
+      sections.temporal.length +
+      sections.entities.length +
+      sections.legal.length +
+      sections.heuristics.length,
+  );
+
   let canApply = $derived(
     phase.kind === "postParse" && selectedCount > 0,
   );
 
-  /** Human-readable label for a PII regex kind. */
   function piiKindLabel(kind: PiiCandidate["kind"]): string {
     switch (kind) {
       case "rrn":
@@ -82,135 +116,246 @@
     }
   }
 
-  /** Join the first N scope kinds into a compact badge line. */
   function formatScopes(
     scopes: ReadonlyArray<{ kind: string; path: string }>,
   ): string {
-    const kinds = new Set(scopes.map((s) => s.kind));
+    const kinds = new Set(scopes.map((scope) => scope.kind));
     return [...kinds].join(" · ");
+  }
+
+  function ruleSubcategory(ruleId: string): string {
+    const [, subcategory = ruleId] = ruleId.split(".", 2);
+    return subcategory;
+  }
+
+  function pushUnique(
+    out: CategoryCandidate[],
+    seen: Set<string>,
+    candidate: CategoryCandidate,
+  ): void {
+    if (seen.has(candidate.text)) return;
+    seen.add(candidate.text);
+    out.push(candidate);
+  }
+
+  function appendManualCandidates(
+    out: CategoryCandidate[],
+    seen: Set<string>,
+    category: ManualCategory,
+  ): void {
+    const bucket = appState.manualAdditions.get(category);
+    if (bucket === undefined) return;
+    for (const text of bucket) {
+      pushUnique(out, seen, {
+        text,
+        meta: "manual",
+        isManual: true,
+        manualCategory: category,
+      });
+    }
+  }
+
+  function buildLiteralCandidates(
+    analysis: Analysis,
+    seen: Set<string>,
+  ): CategoryCandidate[] {
+    const out: CategoryCandidate[] = [];
+    for (const group of analysis.entityGroups) {
+      for (const candidate of group.literals) {
+        pushUnique(out, seen, {
+          text: candidate.text,
+          meta: `literal · ${group.seed}`,
+          isManual: false,
+        });
+      }
+    }
+    appendManualCandidates(out, seen, "literals");
+    return out;
+  }
+
+  function buildDefinedCandidates(
+    analysis: Analysis,
+    seen: Set<string>,
+  ): CategoryCandidate[] {
+    const out: CategoryCandidate[] = [];
+    for (const group of analysis.entityGroups) {
+      for (const candidate of group.defined) {
+        pushUnique(out, seen, {
+          text: candidate.text,
+          meta: `from definition · ${group.seed}`,
+          isManual: false,
+        });
+      }
+    }
+    return out;
+  }
+
+  function buildPiiCandidates(
+    analysis: Analysis,
+    seen: Set<string>,
+  ): CategoryCandidate[] {
+    const out: CategoryCandidate[] = [];
+    for (const candidate of analysis.piiCandidates) {
+      pushUnique(out, seen, {
+        text: candidate.text,
+        meta: `${piiKindLabel(candidate.kind)} · ${formatScopes(candidate.scopes)}`,
+        isManual: false,
+      });
+    }
+    return out;
+  }
+
+  function buildNonPiiCandidates(
+    analysis: Analysis,
+    seen: Set<string>,
+    categories: ReadonlyArray<
+      "financial" | "temporal" | "entities" | "structural" | "legal" | "heuristics"
+    >,
+    manualCategory?: ManualCategory,
+  ): CategoryCandidate[] {
+    const allowed = new Set(categories);
+    const out: CategoryCandidate[] = [];
+
+    for (const candidate of analysis.nonPiiCandidates) {
+      if (!allowed.has(candidate.category)) continue;
+      pushUnique(out, seen, {
+        text: candidate.text,
+        meta: `${ruleSubcategory(candidate.ruleId)} · ${formatScopes(candidate.scopes)}`,
+        confidence: candidate.confidence,
+        isManual: false,
+      });
+    }
+
+    if (manualCategory !== undefined) {
+      appendManualCandidates(out, seen, manualCategory);
+    }
+
+    return out;
+  }
+
+  function buildSections(analysis: Analysis): PanelSections {
+    const seen = new Set<string>();
+
+    const literals = buildLiteralCandidates(analysis, seen);
+    const defined = buildDefinedCandidates(analysis, seen);
+    const pii = buildPiiCandidates(analysis, seen);
+    const financial = buildNonPiiCandidates(
+      analysis,
+      seen,
+      ["financial"],
+      "financial",
+    );
+    const temporal = buildNonPiiCandidates(
+      analysis,
+      seen,
+      ["temporal"],
+      "temporal",
+    );
+    const entities = buildNonPiiCandidates(
+      analysis,
+      seen,
+      ["entities", "structural"],
+      "entities",
+    );
+    const legal = buildNonPiiCandidates(
+      analysis,
+      seen,
+      ["legal"],
+      "legal",
+    );
+    const heuristics = buildNonPiiCandidates(
+      analysis,
+      seen,
+      ["heuristics"],
+    );
+
+    return {
+      literals,
+      defined,
+      pii,
+      financial,
+      temporal,
+      entities,
+      legal,
+      heuristics,
+    };
   }
 </script>
 
 <aside class="panel">
   {#if phase.kind === "postParse"}
     <div class="panel-head">
-      <h2 class="panel-title">Variant candidates</h2>
+      <h2 class="panel-title">Candidates</h2>
       <p class="panel-sub">
-        Review every string before it's redacted. Literal names are
-        auto-selected. Defined term labels (the Buyer, 매수인) are kept
-        by default so the output reads naturally.
+        Review every string before redaction. Categories below.
       </p>
     </div>
 
     <div class="panel-body">
-      <!-- Entity literals -->
-      {#each phase.analysis.entityGroups as group, gi (gi + group.seed)}
-        {#if group.literals.length > 0}
-          <div class="cand-group">
-            <div class="cand-group-label">
-              <span>Literal names — {group.seed}</span>
-              <span>{group.literals.length}</span>
-            </div>
-            <div class="cand-sub-hint">
-              Auto-selected. These identifying strings will be replaced with
-              <code>[REDACTED]</code>.
-            </div>
+      <CategorySection
+        label="당사자"
+        subHint="Auto-selected · 자동 선택됨"
+        category="literals"
+        candidates={sections.literals}
+        canManualAdd={true}
+      />
 
-            {#each group.literals as cand (cand.text)}
-              <button
-                type="button"
-                class="cand-item"
-                class:on={appState.isSelected(cand.text)}
-                onclick={() => appState.toggleSelection(cand.text)}
-              >
-                <div class="cand-check"></div>
-                <div class="cand-text">
-                  <div class="cand-main">
-                    <span class="cand-string">{cand.text}</span>
-                    <span class="cand-count">{cand.count}</span>
-                  </div>
-                  <div class="cand-scopes">substring variant</div>
-                </div>
-              </button>
-            {/each}
-          </div>
-        {/if}
-      {/each}
+      <CategorySection
+        label="정의된 대리어"
+        subHint="Kept as-is by default (D9 정책 — 독해성 유지)"
+        category="defined"
+        candidates={sections.defined}
+        canManualAdd={false}
+      />
 
-      <!-- Defined terms, grouped under one header -->
-      {#if phase.analysis.entityGroups.some((g) => g.defined.length > 0)}
-        <div class="cand-group">
-          <div class="cand-group-label">
-            <span>Defined term labels</span>
-            <span>
-              {phase.analysis.entityGroups.reduce(
-                (sum, g) => sum + g.defined.length,
-                0,
-              )}
-            </span>
-          </div>
-          <div class="cand-sub-hint">
-            Generic roles. Kept as-is by default so the output reads naturally.
-            Select only for 3+ party contracts.
-          </div>
+      <CategorySection
+        label="식별번호 (PII)"
+        subHint="주민번호 · 사업자번호 · 이메일 · 계좌 — 자동 검출"
+        category="pii"
+        candidates={sections.pii}
+        canManualAdd={false}
+      />
 
-          {#each phase.analysis.entityGroups as group, gi (gi + group.seed + "-def")}
-            {#each group.defined as cand (cand.text)}
-              <button
-                type="button"
-                class="cand-item"
-                class:on={appState.isSelected(cand.text)}
-                onclick={() => appState.toggleSelection(cand.text)}
-              >
-                <div class="cand-check"></div>
-                <div class="cand-text">
-                  <div class="cand-main">
-                    <span class="cand-string">{cand.text}</span>
-                    <span class="cand-count">{cand.count}</span>
-                  </div>
-                  <div class="cand-scopes">
-                    from definition · {group.seed}
-                  </div>
-                </div>
-              </button>
-            {/each}
-          {/each}
-        </div>
-      {/if}
+      <CategorySection
+        label="금액"
+        subHint="한화 · USD · 외화 · 백분율 — Phase 1 financial rules"
+        category="financial"
+        candidates={sections.financial}
+        canManualAdd={true}
+      />
 
-      <!-- PII -->
-      {#if phase.analysis.piiCandidates.length > 0}
-        <div class="cand-group">
-          <div class="cand-group-label">
-            <span>Auto-detected PII</span>
-            <span>{phase.analysis.piiCandidates.length}</span>
-          </div>
-          <div class="cand-sub-hint">
-            Emails, phones, 주민번호, 사업자번호, EIN — detected by the
-            Korean + English regex sweep (Lane A).
-          </div>
+      <CategorySection
+        label="날짜 / 기간"
+        subHint="한국식 · ISO · 영문 · 기간 — Phase 1 temporal rules"
+        category="temporal"
+        candidates={sections.temporal}
+        canManualAdd={true}
+      />
 
-          {#each phase.analysis.piiCandidates as cand (cand.text)}
-            <button
-              type="button"
-              class="cand-item"
-              class:on={appState.isSelected(cand.text)}
-              onclick={() => appState.toggleSelection(cand.text)}
-            >
-              <div class="cand-check"></div>
-              <div class="cand-text">
-                <div class="cand-main">
-                  <span class="cand-string">{cand.text}</span>
-                  <span class="cand-count">{cand.count}</span>
-                </div>
-                <div class="cand-scopes">
-                  {piiKindLabel(cand.kind)} · {formatScopes(cand.scopes)}
-                </div>
-              </div>
-            </button>
-          {/each}
-        </div>
-      {/if}
+      <CategorySection
+        label="법인 / 인물"
+        subHint="주식회사 · 대표이사 · 서명자 — Phase 1 entities + structural"
+        category="entities"
+        candidates={sections.entities}
+        canManualAdd={true}
+      />
+
+      <CategorySection
+        label="법원 / 사건"
+        subHint="사건번호 · 법원명 · 법령 · 판례 — Phase 1 legal rules"
+        category="legal"
+        candidates={sections.legal}
+        canManualAdd={true}
+      />
+
+      <CategorySection
+        label="추측 (낮은 신뢰도)"
+        subHint="휴리스틱 감지 — 검토 후 체크하세요"
+        category="heuristics"
+        candidates={sections.heuristics}
+        canManualAdd={false}
+        warnStyle={true}
+      />
     </div>
 
     <div class="panel-foot">
@@ -307,141 +452,9 @@
     flex: 1;
     overflow-y: auto;
     padding: 14px 20px;
-  }
-
-  .cand-group {
-    margin-bottom: 20px;
-  }
-
-  .cand-group-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink-soft);
-    font-weight: 700;
-    margin-bottom: 10px;
-    display: flex;
-    justify-content: space-between;
-  }
-
-  .cand-group-label span:last-child {
-    color: var(--ink-muted);
-    font-family: var(--mono);
-  }
-
-  .cand-sub-hint {
-    font-size: 11px;
-    color: var(--ink-soft);
-    line-height: 1.5;
-    margin: -4px 0 10px;
-    padding: 0 2px;
-  }
-
-  .cand-sub-hint code {
-    font-family: var(--mono);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    padding: 0 4px;
-    border-radius: 3px;
-    color: var(--ink);
-    font-weight: 600;
-  }
-
-  .cand-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    width: 100%;
-    padding: 10px 12px;
-    border-radius: var(--radius);
-    cursor: pointer;
-    border: 1px solid transparent;
-    border-left: 3px solid transparent;
-    transition:
-      background 0.15s,
-      border-color 0.15s;
-    background: none;
-    font: inherit;
-    color: inherit;
-    text-align: left;
-  }
-
-  .cand-item:hover {
-    background: var(--bg);
-  }
-
-  .cand-item.on {
-    background: var(--primary-bg);
-    border-left-color: var(--primary);
-  }
-
-  .cand-item.on:hover {
-    background: #dbeafe;
-  }
-
-  .cand-check {
-    width: 16px;
-    height: 16px;
-    border: 1.5px solid var(--border-strong);
-    border-radius: 4px;
-    margin-top: 1px;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    background: var(--surface);
-  }
-
-  .cand-item.on .cand-check {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: #fff;
-    box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
-  }
-
-  .cand-item.on .cand-check::after {
-    content: "✓";
-    font-size: 11px;
-    line-height: 1;
-    font-weight: 700;
-    font-family: var(--mono);
-  }
-
-  .cand-text {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .cand-main {
-    display: flex;
-    justify-content: space-between;
     gap: 8px;
-  }
-
-  .cand-string {
-    font-size: 13px;
-    color: var(--ink-strong);
-    font-weight: 600;
-    word-break: break-word;
-  }
-
-  .cand-count {
-    font-size: 11px;
-    color: var(--ink-soft);
-    font-family: var(--mono);
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  .cand-item.on .cand-count {
-    color: var(--primary-ink);
-  }
-
-  .cand-scopes {
-    font-size: 11px;
-    color: var(--ink-soft);
   }
 
   .panel-foot {
