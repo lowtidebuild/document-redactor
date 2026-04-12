@@ -4,7 +4,7 @@
 >
 > This brief was authored across sessions +1 through +5 (2026-04-11 to 2026-04-12).
 > All 18 sections (§ 0–18) are written. Decisions were locked during plan-eng-review
-> (session-log-2026-04-11-v2). The brief specifies 46 new detection items across 6
+> (session-log-2026-04-11-v2). The brief specifies 45 new detection items across 6
 > categories, a 3-phase runner pipeline, a parallel `detect-all.ts` API, an engine
 > migration, 15 TDD steps, 17 verification commands, and 30 acceptance criteria.
 >
@@ -74,7 +74,7 @@ These decisions are not up for debate. If you feel tempted to change them, re-re
 
 ## 1. Mission statement
 
-Add the complete rulebook to the document-redactor detection framework: 46 new detection items across 6 categories (financial / temporal / entities / structural / legal / heuristics), wire them into a new 3-phase runner (structural → regex → heuristics), expose a new parallel detection API at `src/detection/detect-all.ts`, and migrate `src/ui/engine.ts` to use it. All while preserving Phase 0 characterization tests byte-for-byte.
+Add the complete rulebook to the document-redactor detection framework: 45 new detection items across 6 categories (financial / temporal / entities / structural / legal / heuristics), wire them into a new 3-phase runner (structural → regex → heuristics), expose a new parallel detection API at `src/detection/detect-all.ts`, and migrate `src/ui/engine.ts` to use it. All while preserving Phase 0 characterization tests byte-for-byte.
 
 **Zero legacy behavior change.** Phase 0 characterization T1–T18 must all still pass on the exact same `buildTargetsFromZip()` API — because `detect-pii.ts` is untouched by this brief. The new pipeline lives alongside.
 
@@ -5547,6 +5547,12 @@ bun run test 2>&1 | tail -5
 # Expected: 559 passing (422 v1.0 legacy + 137 Phase 0)
 bun run typecheck 2>&1 | tail -3
 # Expected: 0 errors
+
+# IMPORTANT: record Phase 0 HEAD hash for later diff checks (§ 18.3 criteria #22-24)
+PHASE0_HEAD=$(git rev-parse --short HEAD)
+echo "Phase 0 HEAD: $PHASE0_HEAD"
+# Write this hash down — you will need it for the handback doc and for
+# verifying that detect-pii.ts / patterns.ts / src/propagation/ are NOT modified.
 ```
 
 If the baseline is NOT 559 passing, STOP — Phase 0 may not have merged. Check `git log --oneline -5` and verify the Phase 0 handback commit is present.
@@ -5555,7 +5561,7 @@ If the baseline is NOT 559 passing, STOP — Phase 0 may not have merged. Check 
 
 **What to do:**
 1. Append 3 new tests to `_framework/types.test.ts` (§ 6.3)
-2. Extend `_framework/runner.ts` with the full content from § 7.1–§ 7.8 (replacing the Phase 0 file content)
+2. Extend `_framework/runner.ts` with the full content from § 7.1–§ 7.8 (extending, NOT replacing — Phase 0's `runRegexPhase` body is preserved byte-for-byte per § 7.5; you are adding new functions and modifying the top-of-file comment + imports)
 3. Extend `_framework/registry.ts` with `ALL_STRUCTURAL_PARSERS` + `ALL_HEURISTICS` exports and the FINANCIAL/TEMPORAL/ENTITIES/LEGAL import placeholders (§ 7.9)
 4. Create `rules/structural/index.ts` and `rules/heuristics/index.ts` with empty-array scaffolding (§ 7.9)
 5. Write 44 new tests in `_framework/runner.test.ts` (§ 7.11)
@@ -5625,17 +5631,38 @@ EOF
 
 **What to do:** Create `rules/temporal.ts` + `rules/temporal.test.ts`, update registry (§ 10).
 
+**Verify:**
+```bash
+bun run test src/detection/rules/temporal.test.ts 2>&1 | tail -5
+bun run test src/detection/detect-pii.characterization.test.ts 2>&1 | tail -5
+# Both pass
+```
+
 **Commit message:** `feat(detection/rules): add 8 temporal detection rules`
 
 ### Step 5 — Entities rules (1 commit)
 
 **What to do:** Create `rules/entities.ts` + `rules/entities.test.ts`, update registry (§ 11).
 
+**Verify:**
+```bash
+bun run test src/detection/rules/entities.test.ts 2>&1 | tail -5
+bun run test src/detection/detect-pii.characterization.test.ts 2>&1 | tail -5
+# Both pass
+```
+
 **Commit message:** `feat(detection/rules): add 12 entity detection rules`
 
 ### Step 6 — Legal rules (1 commit)
 
 **What to do:** Create `rules/legal.ts` + `rules/legal.test.ts`, update registry — FINAL state of `ALL_REGEX_RULES` (§ 13).
+
+**Verify:**
+```bash
+bun run test src/detection/rules/legal.test.ts 2>&1 | tail -5
+bun run test src/detection/detect-pii.characterization.test.ts 2>&1 | tail -5
+# Both pass — registry now has 44 total regex rules
+```
 
 **Commit message:** `feat(detection/rules): add 6 legal detection rules (registry complete: 44 total)`
 
@@ -5877,7 +5904,11 @@ SECOND=$(cat dist/document-redactor.html.sha256 | awk '{print $1}')
 # 13. No accidental untracked files
 git status --porcelain | grep -v '^??' || echo "clean"
 
-# 14. Registry verification — rule counts
+# 14. Fail-loud invariant — no try/catch in production code
+grep -rn '\btry\b' src/detection/_framework/runner.ts src/detection/detect-all.ts src/detection/rules/ | grep -v '\.test\.' || echo "no try found — OK"
+# Expected: "no try found — OK" (zero matches outside test files)
+
+# 16. Registry verification — rule counts
 bun run -e "
   import { ALL_REGEX_RULES } from './src/detection/_framework/registry.js';
   import { ALL_STRUCTURAL_PARSERS } from './src/detection/rules/structural/index.js';
@@ -5888,7 +5919,7 @@ bun run -e "
   console.log('Total detection items:', ALL_REGEX_RULES.length + ALL_STRUCTURAL_PARSERS.length + ALL_HEURISTICS.length, '(expected: 53)');
 "
 
-# 15. Performance budget
+# 17. Performance budget
 bun run test src/detection/detect-all.integration.test.ts --grep "perf" 2>&1 | tail -5
 ```
 
@@ -6100,7 +6131,7 @@ Do NOT commit the handback doc in the same commit as production code. It gets it
 
 ## End of brief
 
-This document is `docs/phases/phase-1-rulebook.md`. It specifies the complete Phase 1 rulebook: 46 new detection items across 6 categories, a 3-phase runner pipeline, a parallel `detect-all.ts` API, and an engine migration. All decisions were locked during plan-eng-review (session-log-2026-04-11-v2). The 15 TDD steps, 17 verification commands, and 30 acceptance criteria are the execution contract.
+This document is `docs/phases/phase-1-rulebook.md`. It specifies the complete Phase 1 rulebook: 45 new detection items across 6 categories, a 3-phase runner pipeline, a parallel `detect-all.ts` API, and an engine migration. All decisions were locked during plan-eng-review (session-log-2026-04-11-v2). The 15 TDD steps, 17 verification commands, and 30 acceptance criteria are the execution contract.
 
 **When the PARTIAL DRAFT warning at the top is removed, this brief is ready for Codex execution.**
 
