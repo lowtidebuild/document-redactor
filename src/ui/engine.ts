@@ -31,8 +31,15 @@
 
 import JSZip from "jszip";
 
-import { detectPiiInZip, type DetectedMatch } from "../detection/detect-pii.js";
+import {
+  detectAllInZip,
+  type ScopedCandidate,
+  type ScopedStructuralDefinition,
+} from "../detection/detect-all.js";
+import type { DetectedMatch } from "../detection/detect-pii.js";
 import { extractTextFromZip } from "../detection/extract-text.js";
+import { ROLE_BLACKLIST_EN } from "../detection/rules/role-blacklist-en.js";
+import { ROLE_BLACKLIST_KO } from "../detection/rules/role-blacklist-ko.js";
 import { listScopes } from "../docx/scopes.js";
 import type { Scope } from "../docx/types.js";
 import {
@@ -63,14 +70,45 @@ export interface FileStats {
   readonly scopeCount: number;
 }
 
+export interface NonPiiCandidate {
+  readonly text: string;
+  readonly ruleId: string;
+  readonly category:
+    | "financial"
+    | "temporal"
+    | "entities"
+    | "structural"
+    | "legal"
+    | "heuristics";
+  readonly confidence: number;
+  readonly count: number;
+  readonly scopes: ReadonlyArray<Scope>;
+}
+
 /** Everything `analyzeZip` returns — the full candidates tree + stats. */
 export interface Analysis {
   /** One variant group per seed entity, in input order. */
   readonly entityGroups: ReadonlyArray<VariantGroup>;
   /** Deduped PII candidates across every scope. */
   readonly piiCandidates: ReadonlyArray<PiiCandidate>;
+  /** Deduped Phase 1 non-PII candidates across every scope. */
+  readonly nonPiiCandidates: ReadonlyArray<NonPiiCandidate>;
   readonly fileStats: FileStats;
 }
+
+const IDENTIFIER_SUBCATEGORY_TO_KIND: Readonly<Record<string, DetectedMatch["kind"]>> = {
+  "korean-rrn": "rrn",
+  "korean-brn": "brn",
+  "us-ein": "ein",
+  "phone-kr": "phone-kr",
+  "phone-intl": "phone-intl",
+  email: "email",
+  "account-kr": "account-kr",
+  "credit-card": "card",
+};
+
+type NonPiiCategory = NonPiiCandidate["category"];
+const ENGLISH_ARTICLES = new Set(["the", "a", "an"]);
 
 /** Extra knobs for `applyRedaction`. Mirrors `FinalizeOptions`. */
 export interface ApplyOptions {
@@ -105,7 +143,7 @@ export async function analyzeZip(
   // PII sweep (Lane A). Aggregate matches by literal text so the UI
   // can show one candidate per unique string with a total count and
   // the list of scopes it appeared in.
-  const piiCandidates = await aggregatePii(zip);
+  const { piiCandidates, nonPiiCandidates } = await aggregateAll(zip);
 
   // Variant propagation (Lane C). Join every scope's text once, parse
   // definition clauses, then propagate per seed.
@@ -116,7 +154,21 @@ export async function analyzeZip(
     propagateVariants(seed, corpus, clauses),
   );
 
-  return { entityGroups, piiCandidates, fileStats };
+  const definedTerms = new Set(
+    entityGroups.flatMap((group) => group.defined.map((candidate) => candidate.text)),
+  );
+  const filteredNonPiiCandidates = nonPiiCandidates.filter(
+    (candidate) =>
+      !definedTerms.has(candidate.text) &&
+      !isRoleLikePlaceholder(candidate.text),
+  );
+
+  return {
+    entityGroups,
+    piiCandidates,
+    nonPiiCandidates: filteredNonPiiCandidates,
+    fileStats,
+  };
 }
 
 /**
@@ -138,6 +190,9 @@ export function defaultSelections(analysis: Analysis): Set<string> {
   }
   for (const pii of analysis.piiCandidates) {
     out.add(pii.text);
+  }
+  for (const candidate of analysis.nonPiiCandidates) {
+    out.add(candidate.text);
   }
   return out;
 }
@@ -171,35 +226,165 @@ export async function applyRedaction(
 }
 
 /**
- * Walk every PII match in the zip and fold them into one candidate
- * per unique text. Preserves order of first appearance so the panel
- * shows items in the order the user would scan them top-to-bottom.
+ * Walk every Phase 1 detection result in the zip and partition it into the
+ * legacy `piiCandidates` shape plus the new `nonPiiCandidates` shape.
  */
-async function aggregatePii(zip: JSZip): Promise<PiiCandidate[]> {
-  const matches = await detectPiiInZip(zip);
-  const byText = new Map<
+async function aggregateAll(zip: JSZip): Promise<{
+  piiCandidates: PiiCandidate[];
+  nonPiiCandidates: NonPiiCandidate[];
+}> {
+  const { candidates, structuralDefinitions } = await detectAllInZip(zip);
+
+  const piiByText = new Map<
     string,
     { kind: DetectedMatch["kind"]; count: number; scopes: Scope[] }
   >();
-  for (const { scope, match } of matches) {
-    const existing = byText.get(match.original);
-    if (existing === undefined) {
-      byText.set(match.original, {
-        kind: match.kind,
-        count: 1,
-        scopes: [scope],
-      });
+  const nonPiiByText = new Map<
+    string,
+    {
+      ruleId: string;
+      category: NonPiiCategory;
+      confidence: number;
+      count: number;
+      scopes: Scope[];
+    }
+  >();
+
+  for (const entry of candidates) {
+    if (entry.candidate.ruleId.startsWith("identifiers.")) {
+      foldPiiCandidate(piiByText, entry);
     } else {
-      existing.count++;
-      if (!existing.scopes.some((s) => s.path === scope.path)) {
-        existing.scopes.push(scope);
-      }
+      foldNonPiiCandidate(nonPiiByText, entry);
     }
   }
-  return [...byText.entries()].map(([text, info]) => ({
+
+  for (const entry of structuralDefinitions) {
+    foldStructuralDefinition(nonPiiByText, entry);
+  }
+
+  const piiCandidates = [...piiByText.entries()].map(([text, info]) => ({
     text,
     kind: info.kind,
     count: info.count,
     scopes: info.scopes,
   }));
+
+  const nonPiiCandidates = [...nonPiiByText.entries()]
+    .map(([text, info]) => ({
+      text,
+      ruleId: info.ruleId,
+      category: info.category,
+      confidence: info.confidence,
+      count: info.count,
+      scopes: info.scopes,
+    }))
+    .sort((a, b) => b.text.length - a.text.length);
+
+  return { piiCandidates, nonPiiCandidates };
+}
+
+function foldPiiCandidate(
+  byText: Map<string, { kind: DetectedMatch["kind"]; count: number; scopes: Scope[] }>,
+  entry: ScopedCandidate,
+): void {
+  const subcategory = entry.candidate.ruleId.slice("identifiers.".length);
+  const kind = IDENTIFIER_SUBCATEGORY_TO_KIND[subcategory];
+  if (kind === undefined) {
+    throw new Error(`Unknown identifier subcategory: ${subcategory}`);
+  }
+
+  const existing = byText.get(entry.candidate.text);
+  if (existing === undefined) {
+    byText.set(entry.candidate.text, {
+      kind,
+      count: 1,
+      scopes: [entry.scope],
+    });
+    return;
+  }
+
+  existing.count++;
+  if (!existing.scopes.some((scope) => scope.path === entry.scope.path)) {
+    existing.scopes.push(entry.scope);
+  }
+}
+
+function foldNonPiiCandidate(
+  byText: Map<
+    string,
+    {
+      ruleId: string;
+      category: NonPiiCategory;
+      confidence: number;
+      count: number;
+      scopes: Scope[];
+    }
+  >,
+  entry: ScopedCandidate,
+): void {
+  const category = entry.candidate.ruleId.split(".", 1)[0] as NonPiiCategory;
+  const existing = byText.get(entry.candidate.text);
+  if (existing === undefined) {
+    byText.set(entry.candidate.text, {
+      ruleId: entry.candidate.ruleId,
+      category,
+      confidence: entry.candidate.confidence,
+      count: 1,
+      scopes: [entry.scope],
+    });
+    return;
+  }
+
+  existing.count++;
+  if (!existing.scopes.some((scope) => scope.path === entry.scope.path)) {
+    existing.scopes.push(entry.scope);
+  }
+}
+
+function foldStructuralDefinition(
+  byText: Map<
+    string,
+    {
+      ruleId: string;
+      category: NonPiiCategory;
+      confidence: number;
+      count: number;
+      scopes: Scope[];
+    }
+  >,
+  entry: ScopedStructuralDefinition,
+): void {
+  if (entry.definition.referent.length === 0) return;
+
+  const existing = byText.get(entry.definition.referent);
+  if (existing === undefined) {
+    byText.set(entry.definition.referent, {
+      ruleId: `structural.${entry.definition.source}`,
+      category: "structural",
+      confidence: 1.0,
+      count: 1,
+      scopes: [entry.scope],
+    });
+    return;
+  }
+
+  existing.count++;
+  if (!existing.scopes.some((scope) => scope.path === entry.scope.path)) {
+    existing.scopes.push(entry.scope);
+  }
+}
+
+function isRoleLikePlaceholder(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return true;
+  if (ROLE_BLACKLIST_KO.has(trimmed)) return true;
+
+  const lower = trimmed.toLowerCase();
+  if (ROLE_BLACKLIST_EN.has(lower)) return true;
+
+  const tokens = lower
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => !ENGLISH_ARTICLES.has(token));
+  return tokens.length > 0 && tokens.every((token) => ROLE_BLACKLIST_EN.has(token));
 }

@@ -93,6 +93,26 @@ describe("analyzeZip", () => {
     expect(kim).toBeDefined();
     expect(kim!.count).toBeGreaterThanOrEqual(1);
   });
+
+  it("populates nonPiiCandidates for Phase 1 matches on the worst-case fixture", async () => {
+    const analysis = await analyzeZip(bytes, SEEDS);
+
+    expect(analysis.nonPiiCandidates.length).toBeGreaterThan(0);
+
+    const categoriesSeen = new Set(
+      analysis.nonPiiCandidates.map((c) => c.category),
+    );
+    expect(
+      categoriesSeen.has("financial") || categoriesSeen.has("temporal"),
+    ).toBe(true);
+
+    expect(analysis.piiCandidates.length).toBeGreaterThanOrEqual(1);
+
+    const selections = defaultSelections(analysis);
+    for (const cand of analysis.nonPiiCandidates) {
+      expect(selections.has(cand.text)).toBe(true);
+    }
+  });
 });
 
 describe("defaultSelections — D9 policy", () => {
