@@ -85,8 +85,9 @@ describe("detect-all integration — bilingual worst-case fixture", () => {
     }
   });
 
-  it("buildAllTargetsFromZip completes within 2 seconds", async () => {
-    const fresh = await JSZip.loadAsync(fs.readFileSync(FIXTURE));
+  it("buildAllTargetsFromZip completes within 2 seconds on the worst-case fixture", async () => {
+    const bytes = fs.readFileSync(FIXTURE);
+    const fresh = await JSZip.loadAsync(bytes);
     const start = performance.now();
     await buildAllTargetsFromZip(fresh);
     expect(performance.now() - start).toBeLessThan(2000);
