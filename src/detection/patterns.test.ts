@@ -27,7 +27,7 @@ describe("주민등록번호 (rrn)", () => {
     ]);
   });
 
-  it("rejects 7th-digit codes outside 1-4 (gender code)", () => {
+  it("rejects 7th-digit codes outside 1-8 (gender + foreigner codes)", () => {
     expect(matches("rrn", "900101-9234567")).toEqual([]);
     expect(matches("rrn", "900101-0234567")).toEqual([]);
   });

@@ -86,8 +86,10 @@ export function detectPii(text: string): DetectedMatch[] {
 
       const startNorm = m.index;
       const endNorm = startNorm + normalized.length;
-      // origOffsets has length text.length + 1, so endNorm (which can be
-      // text.length) is always in range.
+      // origOffsets has length map.text.length + 1 (normalized-space length +
+      // sentinel), so endNorm (which can be map.text.length after any zero-width
+      // stripping) is always in range. NOTE: length differs from original text
+      // whenever normalizeForMatching dropped any zero-width codepoints.
       const startOrig = map.origOffsets[startNorm]!;
       const endOrig = map.origOffsets[endNorm]!;
       const original = text.slice(startOrig, endOrig);

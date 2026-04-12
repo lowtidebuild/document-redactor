@@ -81,8 +81,11 @@ export const PII_PATTERNS: Record<PiiKind, RegExp> = {
   email: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
 
   // Korean bank account: vendor-specific lengths but the canonical separator
-  // pattern is `3-6 / 2-3 / 4-7`. Conservative bounds keep noise low and
-  // avoid colliding with `brn`.
+  // pattern is `3-6 / 2-3 / 4-7`. This intentionally overlaps with `brn` (3-2-5)
+  // and older short-form `phone-kr` (3-3-4); overlap is resolved at the
+  // buildTargetsFromZip dedupe stage where identical original strings collapse.
+  // Detection order ensures brn and phone-kr are emitted BEFORE account-kr for
+  // the same literal, preserving legacy provenance.
   "account-kr": /(?<!\d)\d{3,6}-\d{2,3}-\d{4,7}(?!\d)/g,
 
   // Credit card. 4 groups of 4 digits separated by space, hyphen, or nothing.
