@@ -64,16 +64,19 @@ export type AppPhase =
 
 /**
  * Category key for manual candidate additions. Matches the Phase 1
- * `NonPiiCandidate.category` union plus "literals" for entity literal
- * manual additions. Defined term labels have no manual-add affordance
- * in Phase 2.
+ * `NonPiiCandidate.category` union plus:
+ *   - "literals" for entity literal manual additions
+ *   - "other" for the catch-all "missed items" bucket (Phase 3.3)
+ *
+ * Defined term labels have no manual-add affordance.
  */
 export type ManualCategory =
   | "literals"
   | "financial"
   | "temporal"
   | "entities"
-  | "legal";
+  | "legal"
+  | "other";
 
 /**
  * Default entity seeds — empty. Seeds drive Lane C variant propagation
@@ -95,6 +98,7 @@ function createManualAdditions(): Map<ManualCategory, Set<string>> {
     ["temporal", new Set()],
     ["entities", new Set()],
     ["legal", new Set()],
+    ["other", new Set()],
   ]);
 }
 

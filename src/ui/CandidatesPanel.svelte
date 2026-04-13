@@ -27,6 +27,7 @@
     entities: CategoryCandidate[];
     legal: CategoryCandidate[];
     heuristics: CategoryCandidate[];
+    other: CategoryCandidate[];
   };
 
   type PanelSectionKey = keyof PanelSections;
@@ -52,6 +53,7 @@
     entities: [],
     legal: [],
     heuristics: [],
+    other: [],
   };
 
   const SECTION_SPECS: readonly SectionSpec[] = [
@@ -112,6 +114,13 @@
       canManualAdd: false,
       warnStyle: true,
     },
+    {
+      key: "other",
+      label: "기타 (그 외)",
+      subHint: "자동 감지에서 누락된 항목 — 직접 입력해서 redaction 대상에 추가",
+      category: "other",
+      canManualAdd: true,
+    },
   ];
 
   let { phase }: Props = $props();
@@ -127,7 +136,8 @@
       sections.temporal.length +
       sections.entities.length +
       sections.legal.length +
-      sections.heuristics.length,
+      sections.heuristics.length +
+      sections.other.length,
   );
   let canApply = $derived(phase.kind === "postParse" && selectedCount > 0);
 
@@ -226,6 +236,12 @@
       });
     }
 
+    // "기타 (그 외)" — catch-all bucket. No engine-detected rows; only
+    // user-typed entries via the section's AddCandidateInput. These still
+    // count toward the redaction target set.
+    const other: CategoryCandidate[] = [];
+    appendManual(other, "other");
+
     return {
       literals,
       defined,
@@ -235,6 +251,7 @@
       entities: collectNonPii(["entities", "structural"], "entities"),
       legal: collectNonPii(["legal"], "legal"),
       heuristics: collectNonPii(["heuristics"]),
+      other,
     };
   }
 </script>
