@@ -48,6 +48,19 @@ describe("analyzeZip", () => {
     expect(analysis.fileStats.scopeCount).toBeGreaterThanOrEqual(5);
   });
 
+  it("keeps the Analysis shape unchanged in Phase 3", async () => {
+    const analysis = await analyzeZip(bytes, SEEDS);
+
+    expect(Object.keys(analysis).sort()).toEqual(
+      [
+        "entityGroups",
+        "fileStats",
+        "nonPiiCandidates",
+        "piiCandidates",
+      ],
+    );
+  });
+
   it("each entity group has a literals array (may be empty if seed not found)", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const abc = analysis.entityGroups.find(

@@ -31,7 +31,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import "../../tests/ui-state-shim.js";
 import { appState } from "./state.svelte.ts";
 
@@ -185,5 +185,35 @@ describe("ship gate — manual candidate state flow", () => {
 
     expect(appState.selections.size).toBe(0);
     expect(appState.manualAdditions.get("financial")?.size ?? 0).toBe(0);
+  });
+});
+
+describe("ship gate — focused candidate lifecycle", () => {
+  beforeEach(() => {
+    appState.reset();
+  });
+
+  afterEach(() => {
+    appState.reset();
+  });
+
+  it("jumpToCandidate sets focusedCandidate and auto-clears after 1.2s", async () => {
+    await appState.loadFile(loadFixtureFile("bilingual_nda_worst_case.docx"));
+
+    appState.jumpToCandidate("ABC Corporation");
+    expect(appState.focusedCandidate).toBe("ABC Corporation");
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    expect(appState.focusedCandidate).toBeNull();
+  });
+
+  it("reset clears focusedCandidate", async () => {
+    await appState.loadFile(loadFixtureFile("bilingual_nda_worst_case.docx"));
+
+    appState.jumpToCandidate("ABC Corporation");
+    appState.reset();
+
+    expect(appState.focusedCandidate).toBeNull();
   });
 });
