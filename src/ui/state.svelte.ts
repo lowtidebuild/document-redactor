@@ -45,16 +45,28 @@ export type AppPhase =
       readonly bytes: Uint8Array;
       readonly analysis: Analysis;
     }
-  | { readonly kind: "redacting"; readonly fileName: string }
+  | {
+      readonly kind: "redacting";
+      readonly fileName: string;
+      /** Carried through so verifyFail can offer "back to review". */
+      readonly bytes: Uint8Array;
+      readonly analysis: Analysis;
+    }
   | {
       readonly kind: "downloadReady";
       readonly fileName: string;
       readonly report: FinalizedReport;
+      /** Preserved so the user can return to review after a clean pass. */
+      readonly bytes: Uint8Array;
+      readonly analysis: Analysis;
     }
   | {
       readonly kind: "verifyFail";
       readonly fileName: string;
       readonly report: FinalizedReport;
+      /** Preserved so the user can return to review and fix selections. */
+      readonly bytes: Uint8Array;
+      readonly analysis: Analysis;
     }
   | {
       readonly kind: "fatalError";
@@ -221,15 +233,15 @@ class AppState {
 
   async applyNow(): Promise<void> {
     if (this.phase.kind !== "postParse") return;
-    const { fileName, bytes } = this.phase;
-    this.phase = { kind: "redacting", fileName };
+    const { fileName, bytes, analysis } = this.phase;
+    this.phase = { kind: "redacting", fileName, bytes, analysis };
 
     try {
       const report = await applyRedaction(bytes, this.selections);
       if (report.verify.isClean && report.wordCount.sane) {
-        this.phase = { kind: "downloadReady", fileName, report };
+        this.phase = { kind: "downloadReady", fileName, report, bytes, analysis };
       } else {
-        this.phase = { kind: "verifyFail", fileName, report };
+        this.phase = { kind: "verifyFail", fileName, report, bytes, analysis };
       }
     } catch (err) {
       this.phase = {
@@ -238,6 +250,24 @@ class AppState {
         message: err instanceof Error ? err.message : String(err),
       };
     }
+  }
+
+  /**
+   * Return to the review panel from verifyFail (or downloadReady). Preserves
+   * the user's selections + manualAdditions so they can adjust and retry
+   * without re-analyzing the file. The bytes and analysis are carried in
+   * the phase object (see AppPhase) specifically to make this round-trip
+   * possible.
+   */
+  backToReview(): void {
+    if (
+      this.phase.kind !== "verifyFail" &&
+      this.phase.kind !== "downloadReady"
+    ) {
+      return;
+    }
+    const { fileName, bytes, analysis } = this.phase;
+    this.phase = { kind: "postParse", fileName, bytes, analysis };
   }
 
   reset(): void {

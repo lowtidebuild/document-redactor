@@ -291,9 +291,23 @@
       </div>
     </div>
 
-    <button class="btn-secondary" type="button" onclick={() => appState.reset()}>
-      Start over
-    </button>
+    <div class="verifyfail-actions">
+      <button
+        class="btn-primary"
+        type="button"
+        onclick={() => appState.backToReview()}
+      >
+        ← 검토로 돌아가기 (Back to review)
+      </button>
+      <button class="btn-secondary" type="button" onclick={() => appState.reset()}>
+        Start over
+      </button>
+    </div>
+    <p class="verifyfail-hint">
+      "검토로 돌아가기" 는 선택 사항을 유지한 채 후보 검토 화면으로 돌아갑니다.
+      survived 목록을 참고해서 누락된 항목을 <strong>기타 (그 외)</strong> 섹션에 직접 추가하거나,
+      과도하게 선택된 항목을 해제한 뒤 다시 Apply 하세요.
+    </p>
   {:else if phase.kind === "fatalError"}
     <div class="error-card">
       <h2>Couldn't process this file</h2>
@@ -638,6 +652,59 @@
   .btn-secondary:hover {
     background: var(--bg);
     color: var(--ink);
+  }
+
+  .verifyfail-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .verifyfail-actions .btn-primary,
+  .verifyfail-actions .btn-secondary {
+    flex: 1;
+    margin-top: 0;
+  }
+
+  .btn-primary {
+    display: block;
+    padding: 10px 16px;
+    background: var(--primary);
+    color: #fff;
+    border: 1px solid var(--primary);
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.35);
+    transition:
+      background 0.12s ease,
+      box-shadow 0.15s ease,
+      transform 0.1s ease;
+  }
+
+  .btn-primary:hover {
+    background: var(--primary-hover);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  }
+
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  .verifyfail-hint {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    background: var(--bg);
+    border-left: 3px solid var(--warn);
+    border-radius: var(--radius);
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+
+  .verifyfail-hint strong {
+    color: var(--ink);
+    font-weight: 600;
   }
 
   .error-card {
