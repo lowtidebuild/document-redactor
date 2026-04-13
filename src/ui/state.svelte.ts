@@ -19,7 +19,8 @@
  *   - postParse     — analysis done, candidates ready for review.
  *   - redacting     — user clicked Apply, engine running. Locked.
  *   - downloadReady — verify + sanity both clean. Green banner + SHA-256.
- *   - verifyFail    — verify OR sanity failed. Red banner, download blocked.
+ *   - downloadWarning — verify clean, but sanity exceeded threshold. Amber warning.
+ *   - verifyFail    — sensitive text survived. Red banner, download blocked.
  *   - fatalError    — something threw before we could render a report.
  *
  * All transitions run through the exported verb functions (`loadFile`,
@@ -57,6 +58,14 @@ export type AppPhase =
       readonly fileName: string;
       readonly report: FinalizedReport;
       /** Preserved so the user can return to review after a clean pass. */
+      readonly bytes: Uint8Array;
+      readonly analysis: Analysis;
+    }
+  | {
+      readonly kind: "downloadWarning";
+      readonly fileName: string;
+      readonly report: FinalizedReport;
+      /** Preserved so the user can return to review after a warning. */
       readonly bytes: Uint8Array;
       readonly analysis: Analysis;
     }
@@ -112,6 +121,14 @@ function createManualAdditions(): Map<ManualCategory, Set<string>> {
     ["legal", new Set()],
     ["other", new Set()],
   ]);
+}
+
+export function classifyFinalizedReportPhase(
+  report: FinalizedReport,
+): "downloadReady" | "downloadWarning" | "verifyFail" {
+  if (!report.verify.isClean) return "verifyFail";
+  if (!report.wordCount.sane) return "downloadWarning";
+  return "downloadReady";
 }
 
 /** The singleton state object. Mutate via the verb functions below. */
@@ -238,10 +255,13 @@ class AppState {
 
     try {
       const report = await applyRedaction(bytes, this.selections);
-      if (report.verify.isClean && report.wordCount.sane) {
-        this.phase = { kind: "downloadReady", fileName, report, bytes, analysis };
-      } else {
+      const nextPhase = classifyFinalizedReportPhase(report);
+      if (nextPhase === "verifyFail") {
         this.phase = { kind: "verifyFail", fileName, report, bytes, analysis };
+      } else if (nextPhase === "downloadWarning") {
+        this.phase = { kind: "downloadWarning", fileName, report, bytes, analysis };
+      } else {
+        this.phase = { kind: "downloadReady", fileName, report, bytes, analysis };
       }
     } catch (err) {
       this.phase = {
@@ -253,21 +273,35 @@ class AppState {
   }
 
   /**
-   * Return to the review panel from verifyFail (or downloadReady). Preserves
-   * the user's selections + manualAdditions so they can adjust and retry
-   * without re-analyzing the file. The bytes and analysis are carried in
-   * the phase object (see AppPhase) specifically to make this round-trip
-   * possible.
+   * Return to the review panel from any post-redaction outcome state.
+   * Preserves the user's selections + manualAdditions so they can adjust
+   * and retry without re-analyzing the file. The bytes and analysis are
+   * carried in the phase object (see AppPhase) specifically to make this
+   * round-trip possible.
    */
   backToReview(): void {
     if (
       this.phase.kind !== "verifyFail" &&
+      this.phase.kind !== "downloadWarning" &&
       this.phase.kind !== "downloadReady"
     ) {
       return;
     }
     const { fileName, bytes, analysis } = this.phase;
     this.phase = { kind: "postParse", fileName, bytes, analysis };
+  }
+
+  reviewCandidate(text: string): void {
+    if (
+      this.phase.kind !== "verifyFail" &&
+      this.phase.kind !== "downloadWarning" &&
+      this.phase.kind !== "downloadReady"
+    ) {
+      return;
+    }
+    const { fileName, bytes, analysis } = this.phase;
+    this.phase = { kind: "postParse", fileName, bytes, analysis };
+    this.jumpToCandidate(text);
   }
 
   reset(): void {

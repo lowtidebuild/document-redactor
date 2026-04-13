@@ -70,7 +70,12 @@
   }
 
   function downloadReport(): void {
-    if (phase.kind !== "downloadReady") return;
+    if (
+      phase.kind !== "downloadReady" &&
+      phase.kind !== "downloadWarning"
+    ) {
+      return;
+    }
     // `.slice()` copies into a plain-ArrayBuffer-backed view so Blob
     // never sees SharedArrayBuffer under strict TS5 typing.
     const bytes = phase.report.outputBytes.slice();
@@ -249,13 +254,70 @@
         Start over
       </button>
     </div>
+  {:else if phase.kind === "downloadWarning"}
+    <div class="main-head">
+      <div>
+        <div class="file-name">{phase.fileName}</div>
+        <div class="file-bar">
+          <span class="pill ok">Parsed</span>
+          <span class="pill ok">Verified</span>
+          <span class="pill warn">Review warning</span>
+        </div>
+      </div>
+      <div class="file-meta">SHA-256 · {formatHash(phase.report.sha256)}</div>
+    </div>
+
+    <div class="verify-banner warning">
+      <span class="warnmark">!</span>
+      <div class="banner-body">
+        <strong>No leaks found — review warning before download</strong>
+        <p>
+          Round-trip verification found zero surviving sensitive strings,
+          but {phase.report.wordCount.droppedPct}% of words were removed
+          (threshold {phase.report.wordCount.thresholdPct}%).
+          Review broad selections, or download anyway if this is intentional.
+        </p>
+      </div>
+      <div class="sha-badge">
+        <div class="sha-label">SHA-256</div>
+        <div class="sha-value">{formatHash(phase.report.sha256)}</div>
+      </div>
+    </div>
+
+    <div class="download-card warning">
+      <div class="download-meta">
+        <div class="download-name">{redactedFilename(phase.fileName)}</div>
+        <div class="download-sub">
+          {formatBytes(phase.report.outputBytes.length)} ·
+          {phase.report.scopeMutations.length} scopes touched ·
+          0 surviving strings
+        </div>
+      </div>
+      <button
+        class="btn-download warn"
+        type="button"
+        onclick={downloadReport}
+      >
+        경고를 이해하고 다운로드
+      </button>
+      <button
+        class="btn-secondary"
+        type="button"
+        onclick={() => appState.backToReview()}
+      >
+        검토로 돌아가기
+      </button>
+      <button class="btn-secondary" type="button" onclick={() => appState.reset()}>
+        Start over
+      </button>
+    </div>
   {:else if phase.kind === "verifyFail"}
     <div class="main-head">
       <div>
         <div class="file-name">{phase.fileName}</div>
         <div class="file-bar">
           <span class="pill">Parsed</span>
-          <span class="pill warn">Verification failed</span>
+          <span class="pill warn">Sensitive text survived</span>
         </div>
       </div>
     </div>
@@ -263,29 +325,33 @@
     <div class="verify-banner failure">
       <span class="failmark">✗</span>
       <div class="banner-body">
-        <strong>Download blocked — verification failed</strong>
-        {#if !phase.report.verify.isClean}
-          <p>
-            {phase.report.verify.survived.length} sensitive
-            {phase.report.verify.survived.length === 1 ? "string" : "strings"}
-            survived the redaction. The download is blocked until you fix
-            the issue or re-run with different selections.
-          </p>
-          <ul class="survival-list">
-            {#each phase.report.verify.survived as s (s.text + s.scope.path)}
-              <li>
+        <strong>Download blocked — sensitive text survived</strong>
+        <p>
+          The strings below were already selected for redaction, but they
+          still appear in the generated DOCX. Return to review and inspect
+          them before retrying.
+        </p>
+        <ul class="survival-list">
+          {#each phase.report.verify.survived as s (s.text + s.scope.path)}
+            <li class="survival-row">
+              <div class="survival-meta">
                 <code>{s.text}</code> × {s.count} in
                 <code>{s.scope.path}</code>
-              </li>
-            {/each}
-          </ul>
-        {/if}
+              </div>
+              <button
+                class="btn-inline-review"
+                type="button"
+                onclick={() => appState.reviewCandidate(s.text)}
+              >
+                이 항목 검토
+              </button>
+            </li>
+          {/each}
+        </ul>
         {#if !phase.report.wordCount.sane}
           <p>
-            Word-count sanity check failed:
-            {phase.report.wordCount.droppedPct}% of words removed
-            (threshold {phase.report.wordCount.thresholdPct}%). A selection
-            may be too broad — review and deselect overly generic terms.
+            The word-count sanity check also exceeded its threshold, but
+            the surviving-text leak is the blocking issue.
           </p>
         {/if}
       </div>
@@ -295,18 +361,25 @@
       <button
         class="btn-primary"
         type="button"
+        onclick={() => appState.reviewCandidate(phase.report.verify.survived[0]!.text)}
+      >
+        첫 항목부터 검토
+      </button>
+      <button
+        class="btn-secondary"
+        type="button"
         onclick={() => appState.backToReview()}
       >
-        ← 검토로 돌아가기 (Back to review)
+        검토로 돌아가기
       </button>
       <button class="btn-secondary" type="button" onclick={() => appState.reset()}>
         Start over
       </button>
     </div>
     <p class="verifyfail-hint">
-      "검토로 돌아가기" 는 선택 사항을 유지한 채 후보 검토 화면으로 돌아갑니다.
-      survived 목록을 참고해서 누락된 항목을 <strong>기타 (그 외)</strong> 섹션에 직접 추가하거나,
-      과도하게 선택된 항목을 해제한 뒤 다시 Apply 하세요.
+      `이 항목 검토` 는 현재 선택 상태를 유지한 채 검토 화면으로 돌아가
+      해당 문자열에 포커스를 줍니다. 누출이 남은 상태에서는 다운로드가 계속
+      차단됩니다.
     </p>
   {:else if phase.kind === "fatalError"}
     <div class="error-card">
@@ -486,6 +559,13 @@
     color: #15803d;
   }
 
+  .verify-banner.warning {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+    border-left-color: var(--warn);
+    color: #a16207;
+  }
+
   .verify-banner.failure {
     background: var(--err-bg);
     border-color: var(--err-border);
@@ -503,6 +583,13 @@
     font-size: 16px;
     color: var(--err);
     line-height: 1;
+  }
+
+  .verify-banner .warnmark {
+    font-size: 16px;
+    color: var(--warn);
+    line-height: 1;
+    font-weight: 700;
   }
 
   .verify-banner .banner-body {
@@ -548,9 +635,29 @@
 
   .survival-list {
     margin: 8px 0 0;
-    padding-left: 18px;
+    padding-left: 0;
+    list-style: none;
     font-size: 12px;
     font-weight: 400;
+  }
+
+  .survival-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid rgba(185, 28, 28, 0.12);
+  }
+
+  .survival-row:first-child {
+    border-top: none;
+    padding-top: 2px;
+  }
+
+  .survival-meta {
+    min-width: 0;
+    line-height: 1.55;
   }
 
   .survival-list code {
@@ -560,6 +667,22 @@
     border-radius: 3px;
     border: 1px solid var(--err-border);
     color: var(--err);
+  }
+
+  .btn-inline-review {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    background: var(--surface);
+    color: var(--err);
+    border: 1px solid var(--err-border);
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .btn-inline-review:hover {
+    background: rgba(254, 242, 242, 0.9);
   }
 
   .parse-progress {
@@ -594,6 +717,10 @@
     border-radius: var(--radius-lg);
     padding: 24px;
     box-shadow: var(--shadow-sm);
+  }
+
+  .download-card.warning {
+    border-color: var(--warn-border);
   }
 
   .download-meta {
@@ -635,6 +762,16 @@
 
   .btn-download:active {
     transform: scale(0.99);
+  }
+
+  .btn-download.warn {
+    background: var(--warn);
+    border-color: var(--warn);
+    box-shadow: 0 1px 3px rgba(217, 119, 6, 0.28);
+  }
+
+  .btn-download.warn:hover {
+    background: #b45309;
   }
 
   .btn-secondary {
@@ -700,11 +837,6 @@
     font-size: 12px;
     line-height: 1.55;
     color: var(--ink-soft);
-  }
-
-  .verifyfail-hint strong {
-    color: var(--ink);
-    font-weight: 600;
   }
 
   .error-card {

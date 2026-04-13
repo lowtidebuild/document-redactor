@@ -322,13 +322,20 @@
         0 leaks
       </p>
     </div>
+  {:else if phase.kind === "downloadWarning"}
+    <div class="panel-head">
+      <h2 class="panel-title" style="color: var(--warn)">Review warning</h2>
+      <p class="panel-sub">
+        No leaks found. Review broad selections or download from the main panel.
+      </p>
+    </div>
   {:else if phase.kind === "verifyFail"}
     <div class="panel-head">
       <h2 class="panel-title" style="color: var(--err)">
-        Verification failed
+        Sensitive text survived
       </h2>
       <p class="panel-sub">
-        Download blocked. Review survivals in the main panel.
+        Download is blocked until the survived strings are reviewed.
       </p>
     </div>
   {:else if phase.kind === "fatalError"}

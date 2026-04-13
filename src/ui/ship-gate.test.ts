@@ -33,7 +33,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import "../../tests/ui-state-shim.js";
-import { appState } from "./state.svelte.ts";
+import {
+  appState,
+  classifyFinalizedReportPhase,
+} from "./state.svelte.ts";
+import type { FinalizedReport } from "../finalize/finalize.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -54,6 +58,40 @@ function loadFixtureFile(
 ): File {
   const bytes = Uint8Array.from(loadFixture(name));
   return new File([bytes.buffer], fileName);
+}
+
+function makeReport(
+  opts: {
+    verifyIsClean: boolean;
+    wordCountSane: boolean;
+  },
+): FinalizedReport {
+  return {
+    verify: {
+      isClean: opts.verifyIsClean,
+      scopesChecked: 7,
+      stringsTested: 1,
+      survived: opts.verifyIsClean
+        ? []
+        : [
+            {
+              text: "Pearl Abyss",
+              count: 6,
+              scope: { kind: "body", path: "word/document.xml" },
+            },
+          ],
+    },
+    scopeMutations: [],
+    wordCount: {
+      before: 100,
+      after: opts.wordCountSane ? 82 : 40,
+      droppedPct: opts.wordCountSane ? 18 : 60,
+      thresholdPct: 30,
+      sane: opts.wordCountSane,
+    },
+    sha256: "0".repeat(64),
+    outputBytes: new Uint8Array([1, 2, 3]),
+  };
 }
 
 describe("ship gate — single-file build", () => {
@@ -215,5 +253,101 @@ describe("ship gate — focused candidate lifecycle", () => {
     appState.reset();
 
     expect(appState.focusedCandidate).toBeNull();
+  });
+});
+
+describe("ship gate — verification recovery flow", () => {
+  beforeEach(async () => {
+    appState.reset();
+    await appState.loadFile(loadFixtureFile("bilingual_nda_worst_case.docx"));
+  });
+
+  afterEach(() => {
+    appState.reset();
+  });
+
+  it("classifies clean + sane reports as downloadReady", () => {
+    expect(
+      classifyFinalizedReportPhase(
+        makeReport({ verifyIsClean: true, wordCountSane: true }),
+      ),
+    ).toBe("downloadReady");
+  });
+
+  it("classifies clean + insane reports as downloadWarning", () => {
+    expect(
+      classifyFinalizedReportPhase(
+        makeReport({ verifyIsClean: true, wordCountSane: false }),
+      ),
+    ).toBe("downloadWarning");
+  });
+
+  it("classifies dirty + sane reports as verifyFail", () => {
+    expect(
+      classifyFinalizedReportPhase(
+        makeReport({ verifyIsClean: false, wordCountSane: true }),
+      ),
+    ).toBe("verifyFail");
+  });
+
+  it("classifies dirty + insane reports as verifyFail", () => {
+    expect(
+      classifyFinalizedReportPhase(
+        makeReport({ verifyIsClean: false, wordCountSane: false }),
+      ),
+    ).toBe("verifyFail");
+  });
+
+  it("reviewCandidate from verifyFail returns to postParse and sets focusedCandidate", () => {
+    if (appState.phase.kind !== "postParse") {
+      throw new Error("expected postParse baseline");
+    }
+    const { fileName, bytes, analysis } = appState.phase;
+    const report = makeReport({ verifyIsClean: false, wordCountSane: true });
+    appState.phase = { kind: "verifyFail", fileName, bytes, analysis, report };
+
+    appState.reviewCandidate("Pearl Abyss");
+
+    expect(appState.phase.kind).toBe("postParse");
+    expect(appState.focusedCandidate).toBe("Pearl Abyss");
+  });
+
+  it("reviewCandidate from downloadWarning returns to postParse and sets focusedCandidate", () => {
+    if (appState.phase.kind !== "postParse") {
+      throw new Error("expected postParse baseline");
+    }
+    const { fileName, bytes, analysis } = appState.phase;
+    const report = makeReport({ verifyIsClean: true, wordCountSane: false });
+    appState.phase = {
+      kind: "downloadWarning",
+      fileName,
+      bytes,
+      analysis,
+      report,
+    };
+
+    appState.reviewCandidate("Pearl Abyss");
+
+    expect(appState.phase.kind).toBe("postParse");
+    expect(appState.focusedCandidate).toBe("Pearl Abyss");
+  });
+
+  it("backToReview works from downloadWarning", () => {
+    if (appState.phase.kind !== "postParse") {
+      throw new Error("expected postParse baseline");
+    }
+    const { fileName, bytes, analysis } = appState.phase;
+    const report = makeReport({ verifyIsClean: true, wordCountSane: false });
+    appState.phase = {
+      kind: "downloadWarning",
+      fileName,
+      bytes,
+      analysis,
+      report,
+    };
+
+    appState.backToReview();
+
+    expect(appState.phase.kind).toBe("postParse");
   });
 });
