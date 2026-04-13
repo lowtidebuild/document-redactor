@@ -152,6 +152,67 @@ describe("verifyRedaction", () => {
     expect(result.scopesChecked).toBe(4);
   });
 
+  it("detects a survived URL in word/_rels/document.xml.rels", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("[REDACTED]"),
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId1" Type="hyperlink" Target="mailto:contact@pearlabyss.com" TargetMode="External"/></Relationships>`,
+    });
+    const result = await verifyRedaction(zip, ["contact@pearlabyss.com"]);
+    expect(result.isClean).toBe(false);
+    expect(result.survived).toHaveLength(1);
+    expect((result.survived[0]!.scope as { kind: string }).kind).toBe("rels");
+    expect(result.survived[0]!.scope.path).toBe("word/_rels/document.xml.rels");
+  });
+
+  it("returns clean when rels files do not contain sensitive strings", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("[REDACTED]"),
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"></Relationships>`,
+    });
+    const result = await verifyRedaction(zip, ["contact@pearlabyss.com"]);
+    expect(result.isClean).toBe(true);
+    expect(result.survived).toEqual([]);
+  });
+
+  it("enumerates multiple rels files in sorted path order", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("[REDACTED]"),
+      "word/_rels/header2.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="mailto:header2@example.com"/></Relationships>`,
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="mailto:doc@example.com"/></Relationships>`,
+      "word/_rels/footer1.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="mailto:footer@example.com"/></Relationships>`,
+    });
+    const result = await verifyRedaction(zip, [
+      "header2@example.com",
+      "doc@example.com",
+      "footer@example.com",
+    ]);
+    expect(result.survived.map((entry) => entry.scope.path)).toEqual([
+      "word/_rels/document.xml.rels",
+      "word/_rels/footer1.xml.rels",
+      "word/_rels/header2.xml.rels",
+    ]);
+  });
+
+  it("scans root _rels/.rels too", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("[REDACTED]"),
+      "_rels/.rels": `<?xml version="1.0"?><Relationships><Relationship Target="mailto:root@example.com"/></Relationships>`,
+    });
+    const result = await verifyRedaction(zip, ["root@example.com"]);
+    expect(result.isClean).toBe(false);
+    expect(result.survived[0]!.scope.path).toBe("_rels/.rels");
+  });
+
+  it("counts rels files in scopesChecked", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("hello"),
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships></Relationships>`,
+      "_rels/.rels": `<?xml version="1.0"?><Relationships></Relationships>`,
+    });
+    const result = await verifyRedaction(zip, ["x"]);
+    expect(result.scopesChecked).toBe(3);
+  });
+
   it("handles Korean strings", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("매수인은 김철수이다"),

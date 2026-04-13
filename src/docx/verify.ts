@@ -94,12 +94,38 @@ export async function verifyRedaction(
     }
   }
 
+  const relsPaths = listRelsPaths(zip);
+  for (const relsPath of relsPaths) {
+    const relsXml = await zip.file(relsPath)!.async("string");
+    for (const target of targets) {
+      const count = countOccurrences(relsXml, target);
+      if (count > 0) {
+        survived.push({
+          text: target,
+          scope: { kind: "rels", path: relsPath } as unknown as Scope,
+          count,
+        });
+      }
+    }
+  }
+
   return {
     isClean: survived.length === 0,
     survived,
-    scopesChecked: scopes.length,
+    scopesChecked: scopes.length + relsPaths.length,
     stringsTested: targets.length,
   };
+}
+
+function listRelsPaths(zip: JSZip): string[] {
+  const paths: string[] = [];
+  zip.forEach((relativePath, file) => {
+    if (file.dir) return;
+    if (relativePath.endsWith(".rels")) {
+      paths.push(relativePath);
+    }
+  });
+  return paths.sort();
 }
 
 /**
