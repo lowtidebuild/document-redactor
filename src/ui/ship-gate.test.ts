@@ -65,6 +65,8 @@ function makeReport(
   opts: {
     verifyIsClean: boolean;
     wordCountSane: boolean;
+    repairAttempted?: boolean;
+    warningReasons?: readonly string[];
   },
 ): FinalizedReport {
   return {
@@ -93,7 +95,15 @@ function makeReport(
     },
     sha256: "0".repeat(64),
     outputBytes: new Uint8Array([1, 2, 3]),
-  };
+    repair: {
+      attempted: opts.repairAttempted ?? false,
+      repairedSurvivorCount: opts.repairAttempted && opts.verifyIsClean ? 1 : 0,
+      initialSurvivorCount: opts.repairAttempted ? 1 : 0,
+      finalSurvivorCount:
+        opts.repairAttempted && opts.verifyIsClean ? 0 : opts.verifyIsClean ? 0 : 1,
+    },
+    warningReasons: opts.warningReasons ?? [],
+  } as FinalizedReport;
 }
 
 describe("ship gate — single-file build", () => {
@@ -303,6 +313,44 @@ describe("ship gate — verification recovery flow", () => {
     expect(
       classifyFinalizedReportPhase(
         makeReport({ verifyIsClean: false, wordCountSane: false }),
+      ),
+    ).toBe("verifyFail");
+  });
+
+  it("classifies clean repaired reports with no warnings as downloadRepaired", () => {
+    expect(
+      classifyFinalizedReportPhase(
+        makeReport({
+          verifyIsClean: true,
+          wordCountSane: true,
+          repairAttempted: true,
+        }),
+      ),
+    ).toBe("downloadRepaired");
+  });
+
+  it("classifies clean repaired reports with format warnings as downloadWarning", () => {
+    expect(
+      classifyFinalizedReportPhase(
+        makeReport({
+          verifyIsClean: true,
+          wordCountSane: true,
+          repairAttempted: true,
+          warningReasons: ["repairTouchedFieldOrRelsSurface"],
+        }),
+      ),
+    ).toBe("downloadWarning");
+  });
+
+  it("classifies repaired-but-still-dirty reports as verifyFail", () => {
+    expect(
+      classifyFinalizedReportPhase(
+        makeReport({
+          verifyIsClean: false,
+          wordCountSane: true,
+          repairAttempted: true,
+          warningReasons: ["repairTouchedNonBodyScopes"],
+        }),
       ),
     ).toBe("verifyFail");
   });
