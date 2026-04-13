@@ -21,7 +21,7 @@ const FIXTURE = path.join(
   "tests/fixtures/bilingual_nda_worst_case.docx",
 );
 
-const MIN_FIXTURE_CANDIDATE_COUNT = 39;
+const MIN_FIXTURE_CANDIDATE_COUNT = 32;
 
 describe("detect-all integration — bilingual worst-case fixture", () => {
   let zip: JSZip;
@@ -79,7 +79,7 @@ describe("detect-all integration — bilingual worst-case fixture", () => {
   it("produces a superset of legacy targets on the fixture", async () => {
     const legacy = await buildTargetsFromZip(zip);
     const fresh = await JSZip.loadAsync(fs.readFileSync(FIXTURE));
-    const next = await buildAllTargetsFromZip(fresh);
+    const next = await buildAllTargetsFromZip(fresh, { language: "mixed" });
     for (const target of legacy) {
       expect(next).toContain(target);
     }

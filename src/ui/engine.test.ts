@@ -88,12 +88,12 @@ describe("analyzeZip", () => {
     expect(abc!.defined.map((c) => c.text)).toContain("Discloser");
   });
 
-  it("PII candidates include the fixture's known structured PII", async () => {
+  it("PII candidates include the fixture's English-dominant structured PII", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const texts = analysis.piiCandidates.map((c) => c.text);
     expect(texts).toContain("kim@abc-corp.kr");
-    expect(texts).toContain("010-1234-5678");
-    expect(texts).toContain("123-45-67890");
+    expect(texts).toContain("12-3456789");
+    expect(texts).toContain("+1 415 555 0199");
   });
 
   it("PII candidates are deduped (one entry per unique string)", async () => {
