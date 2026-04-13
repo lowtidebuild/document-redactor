@@ -14,6 +14,13 @@
     have that can come later.
 -->
 <script lang="ts">
+  import JSZip from "jszip";
+
+  import {
+    renderDocumentBody,
+    type RenderedDocument,
+  } from "../docx/render-body.js";
+  import RenderedBody from "./RenderedBody.svelte";
   import { appState, type AppPhase } from "./state.svelte.ts";
 
   type Props = {
@@ -77,6 +84,20 @@
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  const renderedDocCache = new WeakMap<Uint8Array, Promise<RenderedDocument>>();
+
+  function loadRenderedDoc(bytes: Uint8Array): Promise<RenderedDocument> {
+    const cached = renderedDocCache.get(bytes);
+    if (cached !== undefined) return cached;
+
+    const promise = (async () => {
+      const zip = await JSZip.loadAsync(bytes.slice());
+      return await renderDocumentBody(zip);
+    })();
+    renderedDocCache.set(bytes, promise);
+    return promise;
+  }
 </script>
 
 <main class="main">
@@ -138,7 +159,7 @@
           </span>
         </div>
       </div>
-      <div class="file-meta">Ready · review candidates on the right</div>
+      <div class="file-meta">Ready · click highlights or review categories on the right</div>
     </div>
 
     <div class="verify-banner">
@@ -150,25 +171,25 @@
       <span class="hash">offline · file://</span>
     </div>
 
-    <div class="placeholder">
-      <p class="placeholder-title">Document preview coming in a later commit</p>
-      <p class="placeholder-body">
-        For v1, review the candidates on the right panel. Toggle checkboxes
-        to include or exclude strings. Click <strong>Apply and verify</strong>
-        when you're ready.
-      </p>
-      <p class="placeholder-body">
-        {phase.analysis.entityGroups.reduce(
-          (sum, g) => sum + g.literals.length,
-          0,
-        )} entity literals ·
-        {phase.analysis.entityGroups.reduce(
-          (sum, g) => sum + g.defined.length,
-          0,
-        )} defined terms ·
-        {phase.analysis.piiCandidates.length} auto-detected PII
-      </p>
-    </div>
+    {#await loadRenderedDoc(phase.bytes)}
+      <div class="parse-progress">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>렌더링 중…</p>
+      </div>
+    {:then renderedDoc}
+      <RenderedBody {renderedDoc} analysis={phase.analysis} />
+    {:catch err}
+      <div class="error-card">
+        <h2>Couldn't render this document</h2>
+        <p class="error-msg">
+          {err instanceof Error ? err.message : String(err)}
+        </p>
+        <p class="error-hint">
+          Analysis succeeded, but the inline preview could not be built.
+          You can start over and retry with a fresh copy of the file.
+        </p>
+      </div>
+    {/await}
   {:else if phase.kind === "redacting"}
     <div class="main-head">
       <div>
@@ -525,32 +546,6 @@
     border-radius: 3px;
     border: 1px solid var(--err-border);
     color: var(--err);
-  }
-
-  .placeholder {
-    background: var(--surface);
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-lg);
-    padding: 32px;
-    text-align: center;
-    color: var(--ink-soft);
-  }
-
-  .placeholder-title {
-    margin: 0;
-    color: var(--ink-strong);
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  .placeholder-body {
-    margin: 10px 0 0;
-    font-size: 12.5px;
-    line-height: 1.6;
-  }
-
-  .placeholder-body strong {
-    color: var(--ink);
   }
 
   .parse-progress {
