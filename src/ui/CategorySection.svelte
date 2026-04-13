@@ -20,6 +20,8 @@
     candidates: ReadonlyArray<CategoryCandidate>;
     canManualAdd: boolean;
     warnStyle?: boolean | undefined;
+    /** Always-open manual-add input (for the "기타 (그 외)" catch-all). */
+    alwaysOpenInput?: boolean | undefined;
   };
 
   let {
@@ -29,6 +31,7 @@
     candidates,
     canManualAdd,
     warnStyle = false,
+    alwaysOpenInput = false,
   }: Props = $props();
 
   let headerId = $derived(`category-${category}-label`);
@@ -42,7 +45,8 @@
       value === "financial" ||
       value === "temporal" ||
       value === "entities" ||
-      value === "legal"
+      value === "legal" ||
+      value === "other"
     );
   }
 </script>
@@ -74,6 +78,7 @@
         <AddCandidateInput
           category={category}
           {alreadyDetected}
+          alwaysOpen={alwaysOpenInput}
         />
       {/if}
     </div>

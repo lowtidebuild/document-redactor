@@ -40,6 +40,7 @@
     category: SectionCategory;
     canManualAdd: boolean;
     warnStyle?: boolean;
+    alwaysOpenInput?: boolean;
   };
 
   type Props = { phase: AppPhase };
@@ -120,6 +121,7 @@
       subHint: "자동 감지에서 누락된 항목 — 직접 입력해서 redaction 대상에 추가",
       category: "other",
       canManualAdd: true,
+      alwaysOpenInput: true,
     },
   ];
 
@@ -272,6 +274,7 @@
           candidates={sections[section.key]}
           canManualAdd={section.canManualAdd}
           warnStyle={section.warnStyle}
+          alwaysOpenInput={section.alwaysOpenInput}
         />
       {/each}
     </div>

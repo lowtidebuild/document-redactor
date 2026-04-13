@@ -5,17 +5,29 @@
   type Props = {
     category: ManualCategory;
     alreadyDetected: ReadonlySet<string>;
+    /**
+     * When true, the input is always expanded — no "+ 추가" button, no
+     * Cancel button, and after Add the input stays open for continuous
+     * entries. Used by the "기타 (그 외)" catch-all section where manual
+     * input is the whole purpose of the section.
+     */
+    alwaysOpen?: boolean;
   };
 
-  let { category, alreadyDetected }: Props = $props();
+  let { category, alreadyDetected, alwaysOpen = false }: Props = $props();
 
-  let expanded = $state(false);
+  let userExpanded = $state(false);
   let value = $state("");
   let error = $state<string | null>(null);
   let inputEl = $state<HTMLInputElement | null>(null);
 
+  /** Effective open state: either always-on (alwaysOpen prop) or user-triggered. */
+  const expanded = $derived(alwaysOpen || userExpanded);
+
   $effect(() => {
-    if (!expanded) return;
+    // Only auto-focus when the user opens the collapsible form; do not
+    // steal focus on initial mount when alwaysOpen is true.
+    if (!userExpanded) return;
     queueMicrotask(() => inputEl?.focus());
   });
 
@@ -41,13 +53,18 @@
     appState.addManualCandidate(category, trimmed);
     value = "";
     error = null;
-    expanded = false;
+    // Stay expanded in alwaysOpen mode so the user can keep adding.
+    if (!alwaysOpen) {
+      userExpanded = false;
+    }
   }
 
   function handleCancel(): void {
     value = "";
     error = null;
-    expanded = false;
+    if (!alwaysOpen) {
+      userExpanded = false;
+    }
   }
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -67,7 +84,7 @@
     type="button"
     class="add-btn"
     onclick={() => {
-      expanded = true;
+      userExpanded = true;
     }}
   >
     + 추가
@@ -96,13 +113,15 @@
       >
         Add
       </button>
-      <button
-        type="button"
-        class="add-cancel"
-        onclick={handleCancel}
-      >
-        Cancel
-      </button>
+      {#if !alwaysOpen}
+        <button
+          type="button"
+          class="add-cancel"
+          onclick={handleCancel}
+        >
+          Cancel
+        </button>
+      {/if}
     </div>
     {#if error}
       <div class="add-error">{error}</div>
