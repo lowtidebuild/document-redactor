@@ -172,6 +172,12 @@ class AppState {
     } else {
       this.selections.add(text);
     }
+    // Defensive reactivity: plain Set mutations do not reliably trigger
+    // Svelte 5 re-renders across runtime versions. Reassign the reference
+    // so proxied subscribers (row class:on, aria-pressed, <mark> state,
+    // footer count) update. Matches the pattern already used by
+    // addManualCandidate / removeManualCandidate below.
+    this.selections = new Set(this.selections);
   }
 
   isSelected(text: string): boolean {
