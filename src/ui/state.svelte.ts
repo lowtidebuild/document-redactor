@@ -76,20 +76,17 @@ export type ManualCategory =
   | "legal";
 
 /**
- * Default entity seeds — hardcoded to the ones in the worst-case
- * fixture so a first-time user can drop the fixture and see the full
- * candidates tree populate immediately. The UI lets them edit this
- * list before analysis runs.
+ * Default entity seeds — empty. Seeds drive Lane C variant propagation
+ * (user says "ABC Corporation is a party" → propagate to "ABC Corp.",
+ * "A.B.C." variants). The v1 UI does not expose a seed editor because
+ * Phase 1's structural.party-declaration parser + entities regex rules
+ * already catch the main parties automatically, and Phase 2's per-
+ * category "+ 추가" affordance covers the missed-variant case.
+ *
+ * Callers that still want seed-driven propagation can call
+ * `appState.setSeeds([...])` programmatically before `loadFile`.
  */
-const DEFAULT_SEEDS = [
-  "ABC Corporation",
-  "Sunrise Ventures LLC",
-  "ABC 주식회사",
-  "김철수",
-  "이영희",
-  "Project Falcon",
-  "블루윙 2.0",
-] as const;
+const DEFAULT_SEEDS: readonly string[] = [];
 
 function createManualAdditions(): Map<ManualCategory, Set<string>> {
   return new Map([
