@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-
-// @ts-expect-error Phase 8 red test: helper lands in implementation step 9.
 import {
   extractFldSimpleInstrValues,
   extractInstrTexts,
@@ -22,7 +20,7 @@ describe("verify-surfaces", () => {
     const xml = `<w:document ${W_NS}><w:body><w:p><w:fldSimple w:instr="HYPERLINK &quot;mailto:ceo@example.com&quot;"><w:r><w:t>CEO</w:t></w:r></w:fldSimple></w:p></w:body></w:document>`;
 
     expect(extractFldSimpleInstrValues(xml)).toEqual([
-      `HYPERLINK &quot;mailto:ceo@example.com&quot;`,
+      `HYPERLINK "mailto:ceo@example.com"`,
     ]);
   });
 

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import type { Scope } from "./docx/types.js";
-
-// @ts-expect-error Phase 8 red test: module lands in implementation step 6.
 import {
   buildSelectionTargets,
   indexSelectionTargets,

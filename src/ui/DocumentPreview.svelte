@@ -332,7 +332,7 @@
           them before retrying.
         </p>
         <ul class="survival-list">
-          {#each phase.report.verify.survived as s (s.text + s.scope.path)}
+          {#each phase.report.verify.survived as s (s.targetId + s.scope.path)}
             <li class="survival-row">
               <div class="survival-meta">
                 <code>{s.text}</code> × {s.count} in
@@ -341,7 +341,7 @@
               <button
                 class="btn-inline-review"
                 type="button"
-                onclick={() => appState.reviewCandidate(s.text)}
+                onclick={() => appState.reviewCandidate(s.targetId)}
               >
                 Review this item
               </button>
@@ -361,7 +361,7 @@
       <button
         class="btn-primary"
         type="button"
-        onclick={() => appState.reviewCandidate(phase.report.verify.survived[0]!.text)}
+        onclick={() => appState.reviewCandidate(phase.report.verify.survived[0]!.targetId)}
       >
         Review from first item
       </button>

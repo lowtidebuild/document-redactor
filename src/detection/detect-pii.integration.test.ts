@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll } from "vitest";
 import JSZip from "jszip";
 
+import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
 import { buildTargetsFromZip, detectPiiInZip } from "./detect-pii.js";
 import { redactDocx } from "../docx/redact-docx.js";
 import { verifyRedaction } from "../docx/verify.js";
@@ -144,7 +145,10 @@ describe("Lane A — detection sweep against the worst-case fixture", () => {
     expect(report.verify.isClean).toBe(true);
     // And verifying with the SAME target list against the output should
     // also be clean — defensive double-check.
-    const v = await verifyRedaction(fresh, targets);
+    const v = await verifyRedaction(
+      fresh,
+      buildResolvedTargetsFromStrings(targets),
+    );
     expect(v.isClean).toBe(true);
   });
 
@@ -161,7 +165,10 @@ describe("Lane A — detection sweep against the worst-case fixture", () => {
       ...FIXTURE_PII.brn,
       ...FIXTURE_PII.ein,
     ];
-    const v = await verifyRedaction(fresh, allExpected);
+    const v = await verifyRedaction(
+      fresh,
+      buildResolvedTargetsFromStrings(allExpected),
+    );
     expect(v.isClean).toBe(true);
     expect(v.survived).toEqual([]);
   });

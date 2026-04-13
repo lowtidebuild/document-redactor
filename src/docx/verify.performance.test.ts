@@ -4,8 +4,6 @@ import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 
 import { verifyRedaction } from "./verify.js";
-
-// @ts-expect-error Phase 8 red test: module lands in implementation step 6.
 import {
   buildSelectionTargets,
   resolveSelectedTargets,

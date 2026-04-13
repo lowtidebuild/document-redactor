@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll } from "vitest";
 import JSZip from "jszip";
 
+import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
 import {
   buildTargetsFromZip as buildPiiTargets,
 } from "../detection/detect-pii.js";
@@ -155,7 +156,10 @@ describe("Lane A + Lane C → Lane B integration (worst-case bilingual fixture)"
   });
 
   it("end-to-end: the pipeline produces a clean verify against the combined target list", async () => {
-    const v = await verifyRedaction(reportZip, allTargets);
+    const v = await verifyRedaction(
+      reportZip,
+      buildResolvedTargetsFromStrings(allTargets),
+    );
     expect(v.isClean).toBe(true);
     expect(v.survived).toEqual([]);
   });
@@ -182,7 +186,10 @@ describe("Lane A + Lane C → Lane B integration (worst-case bilingual fixture)"
       "123-45-67890",
       "12-3456789",
     ];
-    const v = await verifyRedaction(reportZip, knownPii);
+    const v = await verifyRedaction(
+      reportZip,
+      buildResolvedTargetsFromStrings(knownPii),
+    );
     expect(v.isClean).toBe(true);
   });
 

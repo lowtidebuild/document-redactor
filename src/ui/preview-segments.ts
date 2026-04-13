@@ -1,6 +1,7 @@
 import { normalizeForMatching } from "../detection/normalize.js";
 
 export interface PreviewCandidate {
+  readonly selectionTargetId: string;
   readonly text: string;
   readonly selected: boolean;
 }
@@ -9,6 +10,7 @@ interface MarkSpan {
   readonly start: number;
   readonly end: number;
   readonly text: string;
+  readonly selectionTargetId: string;
   readonly candidate: string;
   readonly selected: boolean;
 }
@@ -19,6 +21,7 @@ export type PreviewSegment =
       readonly type: "mark";
       readonly key: string;
       readonly text: string;
+      readonly selectionTargetId: string;
       readonly candidate: string;
       readonly selected: boolean;
     };
@@ -67,6 +70,7 @@ export function buildPreviewSegments(
       type: "mark",
       key: `${scopeIndex}-${paragraphIndex}-mark-${segmentIndex}`,
       text: mark.text,
+      selectionTargetId: mark.selectionTargetId,
       candidate: mark.candidate,
       selected: mark.selected,
     });
@@ -114,6 +118,7 @@ function findMarksWithFallback(
         start,
         end,
         text: paragraphText.slice(start, end),
+        selectionTargetId: candidate.selectionTargetId,
         candidate: candidate.text,
         selected: candidate.selected,
       });
@@ -142,6 +147,7 @@ function findRawMarks(
         start,
         end: start + candidate.text.length,
         text: candidate.text,
+        selectionTargetId: candidate.selectionTargetId,
         candidate: candidate.text,
         selected: candidate.selected,
       });

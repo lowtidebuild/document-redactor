@@ -14,7 +14,19 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll } from "vitest";
 import JSZip from "jszip";
 
-import { analyzeZip, applyRedaction, defaultSelections } from "./engine.js";
+import {
+  analyzeZip,
+  applyRedaction,
+  defaultSelections,
+  type Analysis,
+} from "./engine.js";
+import {
+  buildSelectionTargetId,
+  buildSelectionTargets,
+  indexSelectionTargets,
+  type SelectionOccurrenceInput,
+  type SelectionReviewSection,
+} from "../selection-targets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -38,6 +50,118 @@ const SEEDS: ReadonlyArray<string> = [
   "블루윙 2.0",
 ];
 
+function toOccurrence(
+  text: string,
+  options: {
+    sourceKind: SelectionOccurrenceInput["sourceKind"];
+    reviewSection: SelectionReviewSection;
+    defaultSelected: boolean;
+    ruleId?: string | null;
+  },
+): SelectionOccurrenceInput {
+  return {
+    scope: null,
+    text,
+    normalizedText: text,
+    ruleId: options.ruleId ?? null,
+    sourceKind: options.sourceKind,
+    reviewSection: options.reviewSection,
+    defaultSelected: options.defaultSelected,
+  };
+}
+
+type AnalysisMockInput =
+  Pick<Analysis, "entityGroups" | "piiCandidates" | "nonPiiCandidates" | "fileStats"> &
+    Partial<Pick<Analysis, "literalCandidates" | "definedCandidates">>;
+
+function withSelectionTargets(
+  analysis: AnalysisMockInput,
+): Analysis {
+  const literalCandidates =
+    "literalCandidates" in analysis
+      ? analysis.literalCandidates
+      : analysis.entityGroups.flatMap((group) =>
+          group.literals.map((candidate) => ({
+            text: candidate.text,
+            seed: group.seed,
+            count: candidate.count,
+            selectionTargetId: buildSelectionTargetId("auto", candidate.text),
+          })),
+        );
+  const definedCandidates =
+    "definedCandidates" in analysis
+      ? analysis.definedCandidates
+      : analysis.entityGroups.flatMap((group) =>
+          group.defined.map((candidate) => ({
+            text: candidate.text,
+            seed: group.seed,
+            count: candidate.count,
+            selectionTargetId: buildSelectionTargetId("auto", candidate.text),
+          })),
+        );
+  const selectionTargets = buildSelectionTargets([
+    ...literalCandidates.map((candidate) =>
+      toOccurrence(candidate.text, {
+        sourceKind: "literal",
+        reviewSection: "literals",
+        defaultSelected: true,
+      }),
+    ),
+    ...definedCandidates.map((candidate) =>
+      toOccurrence(candidate.text, {
+        sourceKind: "literal",
+        reviewSection: "defined",
+        defaultSelected: false,
+      }),
+    ),
+    ...analysis.piiCandidates.map((candidate) =>
+      toOccurrence(candidate.text, {
+        sourceKind: "pii",
+        reviewSection: "pii",
+        defaultSelected: true,
+      }),
+    ),
+    ...analysis.nonPiiCandidates.map((candidate) =>
+      toOccurrence(candidate.text, {
+        sourceKind: "nonPii",
+        reviewSection:
+          candidate.category === "financial"
+            ? "financial"
+            : candidate.category === "temporal"
+              ? "temporal"
+              : candidate.category === "legal"
+                ? "legal"
+                : candidate.category === "heuristics"
+                  ? "heuristics"
+                  : "entities",
+        defaultSelected: candidate.confidence === 1.0,
+        ruleId: candidate.ruleId,
+      }),
+    ),
+  ]);
+
+  return {
+    ...analysis,
+    literalCandidates,
+    definedCandidates,
+    selectionTargets,
+    selectionTargetById: indexSelectionTargets(selectionTargets),
+  };
+}
+
+function selectionIdForText(
+  analysis: Awaited<ReturnType<typeof analyzeZip>>,
+  text: string,
+): string {
+  const target = analysis.selectionTargets.find(
+    (entry) => entry.displayText === text,
+  );
+  if (target === undefined) {
+    throw new Error(`Missing selection target for ${text}`);
+  }
+  return target.id;
+}
+
 describe("analyzeZip", () => {
   let bytes: Uint8Array;
 
@@ -58,10 +182,14 @@ describe("analyzeZip", () => {
 
     expect(Object.keys(analysis).sort()).toEqual(
       [
+        "definedCandidates",
         "entityGroups",
         "fileStats",
+        "literalCandidates",
         "nonPiiCandidates",
         "piiCandidates",
+        "selectionTargetById",
+        "selectionTargets",
       ],
     );
   });
@@ -156,9 +284,9 @@ describe("analyzeZip", () => {
         literalTexts.has(cand.text) ||
         piiTexts.has(cand.text)
       ) {
-        expect(selections.has(cand.text)).toBe(true);
+        expect(selections.has(cand.selectionTargetId)).toBe(true);
       } else {
-        expect(selections.has(cand.text)).toBe(false);
+        expect(selections.has(cand.selectionTargetId)).toBe(false);
       }
     }
   });
@@ -174,10 +302,8 @@ describe("defaultSelections — D9 policy", () => {
   it("includes all literal entity candidates by default", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selected = defaultSelections(analysis);
-    for (const group of analysis.entityGroups) {
-      for (const lit of group.literals) {
-        expect(selected.has(lit.text)).toBe(true);
-      }
+    for (const candidate of analysis.literalCandidates) {
+      expect(selected.has(candidate.selectionTargetId)).toBe(true);
     }
   });
 
@@ -185,27 +311,26 @@ describe("defaultSelections — D9 policy", () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selected = defaultSelections(analysis);
     for (const pii of analysis.piiCandidates) {
-      expect(selected.has(pii.text)).toBe(true);
+      expect(selected.has(pii.selectionTargetId)).toBe(true);
     }
   });
 
   it("excludes all defined-term candidates by default (D9)", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selected = defaultSelections(analysis);
-    for (const group of analysis.entityGroups) {
-      for (const def of group.defined) {
-        expect(selected.has(def.text)).toBe(false);
-      }
+    for (const candidate of analysis.definedCandidates) {
+      expect(selected.has(candidate.selectionTargetId)).toBe(false);
     }
   });
 
   it("does NOT include heuristic candidates (confidence < 1.0) in defaultSelections", () => {
-    const analysis = {
+    const analysis = withSelectionTargets({
       entityGroups: [],
       piiCandidates: [],
       nonPiiCandidates: [
         {
           text: "Acme Holdings",
+          selectionTargetId: buildSelectionTargetId("auto", "Acme Holdings"),
           ruleId: "heuristics.capitalization-cluster",
           category: "heuristics" as const,
           confidence: 0.7,
@@ -214,6 +339,7 @@ describe("defaultSelections — D9 policy", () => {
         },
         {
           text: "50,000,000원",
+          selectionTargetId: buildSelectionTargetId("auto", "50,000,000원"),
           ruleId: "financial.won-amount",
           category: "financial" as const,
           confidence: 1.0,
@@ -222,14 +348,14 @@ describe("defaultSelections — D9 policy", () => {
         },
       ],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    } satisfies Parameters<typeof defaultSelections>[0];
+    });
     const selections = defaultSelections(analysis);
-    expect(selections.has("Acme Holdings")).toBe(false);
-    expect(selections.has("50,000,000원")).toBe(true);
+    expect(selections.has(buildSelectionTargetId("auto", "Acme Holdings"))).toBe(false);
+    expect(selections.has(buildSelectionTargetId("auto", "50,000,000원"))).toBe(true);
   });
 
   it("excludes defined term labels from defaultSelections (D9 preserved)", () => {
-    const analysis = {
+    const analysis = withSelectionTargets({
       entityGroups: [
         {
           seed: "ABC Corp",
@@ -246,32 +372,39 @@ describe("defaultSelections — D9 policy", () => {
       piiCandidates: [],
       nonPiiCandidates: [],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    } satisfies Parameters<typeof defaultSelections>[0];
+    });
     const selections = defaultSelections(analysis);
-    expect(selections.has("ABC Corporation")).toBe(true);
-    expect(selections.has("the Buyer")).toBe(false);
+    expect(selections.has(buildSelectionTargetId("auto", "ABC Corporation"))).toBe(true);
+    expect(selections.has(buildSelectionTargetId("auto", "the Buyer"))).toBe(false);
   });
 
   it("includes ALL PII candidates regardless of confidence field presence", () => {
-    const analysis = {
+    const analysis = withSelectionTargets({
       entityGroups: [],
       piiCandidates: [
-        { text: "user@example.com", kind: "email" as const, count: 1, scopes: [] },
+        {
+          text: "user@example.com",
+          selectionTargetId: buildSelectionTargetId("auto", "user@example.com"),
+          kind: "email" as const,
+          count: 1,
+          scopes: [],
+        },
       ],
       nonPiiCandidates: [],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    } satisfies Parameters<typeof defaultSelections>[0];
+    });
     const selections = defaultSelections(analysis);
-    expect(selections.has("user@example.com")).toBe(true);
+    expect(selections.has(buildSelectionTargetId("auto", "user@example.com"))).toBe(true);
   });
 
   it("includes non-heuristic nonPii candidates (confidence === 1.0) across all categories", () => {
-    const analysis = {
+    const analysis = withSelectionTargets({
       entityGroups: [],
       piiCandidates: [],
       nonPiiCandidates: [
         {
           text: "50,000원",
+          selectionTargetId: buildSelectionTargetId("auto", "50,000원"),
           ruleId: "financial.won-amount",
           category: "financial" as const,
           confidence: 1.0,
@@ -280,6 +413,7 @@ describe("defaultSelections — D9 policy", () => {
         },
         {
           text: "2024년 3월 15일",
+          selectionTargetId: buildSelectionTargetId("auto", "2024년 3월 15일"),
           ruleId: "temporal.date-ko-full",
           category: "temporal" as const,
           confidence: 1.0,
@@ -288,6 +422,7 @@ describe("defaultSelections — D9 policy", () => {
         },
         {
           text: "ABC 주식회사",
+          selectionTargetId: buildSelectionTargetId("auto", "ABC 주식회사"),
           ruleId: "entities.ko-corp-suffix",
           category: "entities" as const,
           confidence: 1.0,
@@ -296,6 +431,7 @@ describe("defaultSelections — D9 policy", () => {
         },
         {
           text: "대법원",
+          selectionTargetId: buildSelectionTargetId("auto", "대법원"),
           ruleId: "legal.ko-court-name",
           category: "legal" as const,
           confidence: 1.0,
@@ -304,6 +440,7 @@ describe("defaultSelections — D9 policy", () => {
         },
         {
           text: "NDA",
+          selectionTargetId: buildSelectionTargetId("auto", "NDA"),
           ruleId: "structural.header-block",
           category: "structural" as const,
           confidence: 1.0,
@@ -312,18 +449,18 @@ describe("defaultSelections — D9 policy", () => {
         },
       ],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    } satisfies Parameters<typeof defaultSelections>[0];
+    });
     const selections = defaultSelections(analysis);
     expect(selections.size).toBe(5);
   });
 
   it("handles empty analysis by returning empty set", () => {
-    const analysis = {
+    const analysis = withSelectionTargets({
       entityGroups: [],
       piiCandidates: [],
       nonPiiCandidates: [],
       fileStats: { sizeBytes: 0, scopeCount: 0 },
-    } satisfies Parameters<typeof defaultSelections>[0];
+    });
     expect(defaultSelections(analysis).size).toBe(0);
   });
 });
@@ -338,7 +475,7 @@ describe("applyRedaction — the Apply button path", () => {
   it("produces a shippable FinalizedReport using default selections", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selections = defaultSelections(analysis);
-    const report = await applyRedaction(bytes, selections);
+    const report = await applyRedaction(bytes, analysis, selections);
 
     expect(report.verify.isClean).toBe(true);
     expect(report.wordCount.sane).toBe(true);
@@ -349,7 +486,7 @@ describe("applyRedaction — the Apply button path", () => {
   it("D9: defined terms survive in the output when not selected", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selections = defaultSelections(analysis);
-    const report = await applyRedaction(bytes, selections);
+    const report = await applyRedaction(bytes, analysis, selections);
 
     const reloaded = await JSZip.loadAsync(report.outputBytes);
     const body = await reloaded.file("word/document.xml")!.async("string");
@@ -363,7 +500,7 @@ describe("applyRedaction — the Apply button path", () => {
     const before = bytes.slice(); // snapshot
     const analysis = await analyzeZip(bytes, SEEDS);
     const selections = defaultSelections(analysis);
-    await applyRedaction(bytes, selections);
+    await applyRedaction(bytes, analysis, selections);
     // bytes must be unchanged so the user can retry / tweak / reselect
     expect(bytes.length).toBe(before.length);
     for (let i = 0; i < Math.min(1000, bytes.length); i++) {
@@ -374,8 +511,8 @@ describe("applyRedaction — the Apply button path", () => {
   it("deterministic: same selections → same SHA-256", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selections = defaultSelections(analysis);
-    const a = await applyRedaction(bytes, selections);
-    const b = await applyRedaction(bytes, selections);
+    const a = await applyRedaction(bytes, analysis, selections);
+    const b = await applyRedaction(bytes, analysis, selections);
     expect(a.sha256).toBe(b.sha256);
   });
 
@@ -383,16 +520,11 @@ describe("applyRedaction — the Apply button path", () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const narrow = defaultSelections(analysis);
     const wide = new Set(narrow);
-    // Add one defined-term to the wider selection
-    for (const group of analysis.entityGroups) {
-      for (const def of group.defined) {
-        wide.add(def.text);
-        break;
-      }
-      if (wide.size !== narrow.size) break;
+    if (analysis.definedCandidates[0] !== undefined) {
+      wide.add(analysis.definedCandidates[0].selectionTargetId);
     }
-    const a = await applyRedaction(bytes, narrow);
-    const b = await applyRedaction(bytes, wide);
+    const a = await applyRedaction(bytes, analysis, narrow);
+    const b = await applyRedaction(bytes, analysis, wide);
     // Different selections should produce different hashes (widened redaction
     // removes more content, so the bytes differ)
     expect(a.sha256).not.toBe(b.sha256);
@@ -402,7 +534,7 @@ describe("applyRedaction — the Apply button path", () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selections = defaultSelections(analysis);
     // Force insanity: a 0% threshold means any drop fails.
-    const report = await applyRedaction(bytes, selections, {
+    const report = await applyRedaction(bytes, analysis, selections, {
       wordCountThresholdPct: 0,
     });
     // verify should still be clean
@@ -430,12 +562,12 @@ describe("analyzeZip + applyRedaction — selection changes", () => {
     // "ABC Corp" too — demonstrating that the atomic form IS a
     // substring of the composite. So to make a composite survive we
     // must deselect every variant that could match it.
-    selections.delete("ABC Corporation");
-    selections.delete("ABC Corp");
-    selections.delete("ABC");
-    selections.delete("ABC 주식회사");
+    selections.delete(selectionIdForText(analysis, "ABC Corporation"));
+    selections.delete(selectionIdForText(analysis, "ABC Corp"));
+    selections.delete(selectionIdForText(analysis, "ABC"));
+    selections.delete(selectionIdForText(analysis, "ABC 주식회사"));
 
-    const report = await applyRedaction(bytes, selections);
+    const report = await applyRedaction(bytes, analysis, selections);
     const reloaded = await JSZip.loadAsync(report.outputBytes);
     const body = await reloaded.file("word/document.xml")!.async("string");
     // ABC Corporation should still be present in the body/table
@@ -446,14 +578,17 @@ describe("analyzeZip + applyRedaction — selection changes", () => {
   it("selecting a defined term means it gets redacted", async () => {
     const analysis = await analyzeZip(bytes, SEEDS);
     const selections = defaultSelections(analysis);
+    const defined = analysis.definedCandidates[0];
+    if (defined === undefined) {
+      throw new Error("expected at least one defined candidate");
+    }
 
-    // Opt IN to 'the Buyer'
-    selections.add("the Buyer");
+    // Opt IN to the first defined term surfaced by propagation.
+    selections.add(defined.selectionTargetId);
 
-    const report = await applyRedaction(bytes, selections);
+    const report = await applyRedaction(bytes, analysis, selections);
     const reloaded = await JSZip.loadAsync(report.outputBytes);
     const body = await reloaded.file("word/document.xml")!.async("string");
-    // The Buyer should be redacted — look for the [REDACTED] form
-    expect(body).not.toContain("the Buyer");
+    expect(body).not.toContain(defined.text);
   });
 });

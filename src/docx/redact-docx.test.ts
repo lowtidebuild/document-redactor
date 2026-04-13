@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll } from "vitest";
 import JSZip from "jszip";
 
+import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
 import { redactDocx } from "./redact-docx.js";
 import { listScopes, readScopeXml } from "./scopes.js";
 import { hasTrackChanges } from "./flatten-track-changes.js";
@@ -239,7 +240,10 @@ describe("redactDocx — integration against the worst-case bilingual fixture", 
     await redactDocx(partialZip, { targets: ["[__never__]"] });
     // Now run a verify with the real list — should find ABC Corporation
     // surviving.
-    const v = await verifyRedaction(partialZip, ["ABC Corporation"]);
+    const v = await verifyRedaction(
+      partialZip,
+      buildResolvedTargetsFromStrings(["ABC Corporation"]),
+    );
     expect(v.isClean).toBe(false);
     expect(v.survived[0]!.text).toBe("ABC Corporation");
   });

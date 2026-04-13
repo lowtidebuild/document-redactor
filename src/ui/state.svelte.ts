@@ -35,6 +35,13 @@ import {
   defaultSelections,
   type Analysis,
 } from "./engine.js";
+import {
+  buildManualSelectionTarget,
+  buildSelectionTargetId,
+  type SelectionReviewSection,
+  type SelectionTarget,
+  type SelectionTargetId,
+} from "../selection-targets.js";
 
 /** Discriminated union of every state the app can be in. */
 export type AppPhase =
@@ -131,6 +138,188 @@ export function classifyFinalizedReportPhase(
   return "downloadReady";
 }
 
+function manualCategoryToSection(
+  category: ManualCategory,
+): SelectionReviewSection {
+  switch (category) {
+    case "literals":
+      return "literals";
+    case "financial":
+      return "financial";
+    case "temporal":
+      return "temporal";
+    case "entities":
+      return "entities";
+    case "legal":
+      return "legal";
+    case "other":
+      return "other";
+  }
+}
+
+function mergePersistedManualTargets(
+  analysis: Analysis,
+  manualAdditions: ReadonlyMap<ManualCategory, ReadonlySet<string>>,
+): { analysis: Analysis; manualSelectionIds: Set<SelectionTargetId> } {
+  let selectionTargets = [...analysis.selectionTargets];
+  let selectionTargetById = new Map(analysis.selectionTargetById);
+  const manualSelectionIds = new Set<SelectionTargetId>();
+
+  for (const [category, values] of manualAdditions.entries()) {
+    for (const text of values) {
+      const autoId = buildSelectionTargetId("auto", text);
+      const autoTarget = selectionTargetById.get(autoId);
+      if (autoTarget !== undefined) {
+        manualSelectionIds.add(autoId);
+        if (!autoTarget.sourceKinds.includes("manual")) {
+          const merged = {
+            ...autoTarget,
+            sourceKinds: [...autoTarget.sourceKinds, "manual"] as const,
+          };
+          ({ selectionTargets, selectionTargetById } = replaceSelectionTarget(
+            selectionTargets,
+            selectionTargetById,
+            merged,
+          ));
+        }
+        continue;
+      }
+
+      const manualTarget = buildManualSelectionTarget(
+        text,
+        manualCategoryToSection(category),
+      );
+      if (!selectionTargetById.has(manualTarget.id)) {
+        selectionTargets = [...selectionTargets, manualTarget];
+        selectionTargetById = new Map(selectionTargetById).set(
+          manualTarget.id,
+          manualTarget,
+        );
+      }
+      manualSelectionIds.add(manualTarget.id);
+    }
+  }
+
+  return {
+    analysis: {
+      ...analysis,
+      selectionTargets,
+      selectionTargetById,
+    },
+    manualSelectionIds,
+  };
+}
+
+function ensureManualTarget(
+  analysis: Analysis,
+  category: ManualCategory,
+  text: string,
+): { analysis: Analysis; targetId: SelectionTargetId } {
+  const autoId = buildSelectionTargetId("auto", text);
+  const autoTarget = analysis.selectionTargetById.get(autoId);
+  if (autoTarget !== undefined) {
+    if (autoTarget.sourceKinds.includes("manual")) {
+      return { analysis, targetId: autoId };
+    }
+    const merged = {
+      ...autoTarget,
+      sourceKinds: [...autoTarget.sourceKinds, "manual"] as const,
+    };
+    const next = replaceSelectionTarget(
+      analysis.selectionTargets,
+      analysis.selectionTargetById,
+      merged,
+    );
+    return {
+      analysis: {
+        ...analysis,
+        selectionTargets: next.selectionTargets,
+        selectionTargetById: next.selectionTargetById,
+      },
+      targetId: autoId,
+    };
+  }
+
+  const manualTarget = buildManualSelectionTarget(
+    text,
+    manualCategoryToSection(category),
+  );
+  if (analysis.selectionTargetById.has(manualTarget.id)) {
+    return { analysis, targetId: manualTarget.id };
+  }
+
+  const selectionTargets = [...analysis.selectionTargets, manualTarget];
+  const selectionTargetById = new Map(analysis.selectionTargetById).set(
+    manualTarget.id,
+    manualTarget,
+  );
+  return {
+    analysis: { ...analysis, selectionTargets, selectionTargetById },
+    targetId: manualTarget.id,
+  };
+}
+
+function removeManualTarget(
+  analysis: Analysis,
+  text: string,
+): { analysis: Analysis; targetId: SelectionTargetId; keepSelected: boolean } {
+  const autoId = buildSelectionTargetId("auto", text);
+  const autoTarget = analysis.selectionTargetById.get(autoId);
+  if (autoTarget !== undefined && autoTarget.sourceKinds.includes("manual")) {
+    const sourceKinds = autoTarget.sourceKinds.filter((kind) => kind !== "manual");
+    const nextTarget = {
+      ...autoTarget,
+      sourceKinds,
+    };
+    const next = replaceSelectionTarget(
+      analysis.selectionTargets,
+      analysis.selectionTargetById,
+      nextTarget,
+    );
+    return {
+      analysis: {
+        ...analysis,
+        selectionTargets: next.selectionTargets,
+        selectionTargetById: next.selectionTargetById,
+      },
+      targetId: autoId,
+      keepSelected: autoTarget.defaultSelected,
+    };
+  }
+
+  const manualId = buildSelectionTargetId("manual", text);
+  if (!analysis.selectionTargetById.has(manualId)) {
+    return { analysis, targetId: manualId, keepSelected: false };
+  }
+
+  const selectionTargets = analysis.selectionTargets.filter(
+    (target) => target.id !== manualId,
+  );
+  const selectionTargetById = new Map(analysis.selectionTargetById);
+  selectionTargetById.delete(manualId);
+  return {
+    analysis: { ...analysis, selectionTargets, selectionTargetById },
+    targetId: manualId,
+    keepSelected: false,
+  };
+}
+
+function replaceSelectionTarget(
+  selectionTargets: readonly SelectionTarget[],
+  selectionTargetById: ReadonlyMap<SelectionTargetId, SelectionTarget>,
+  nextTarget: SelectionTarget,
+): {
+  selectionTargets: SelectionTarget[];
+  selectionTargetById: Map<SelectionTargetId, SelectionTarget>;
+} {
+  return {
+    selectionTargets: selectionTargets.map((target) =>
+      target.id === nextTarget.id ? nextTarget : target,
+    ),
+    selectionTargetById: new Map(selectionTargetById).set(nextTarget.id, nextTarget),
+  };
+}
+
 /** The singleton state object. Mutate via the verb functions below. */
 class AppState {
   phase = $state<AppPhase>({ kind: "idle" });
@@ -139,14 +328,14 @@ class AppState {
   seeds = $state<string[]>([...DEFAULT_SEEDS]);
 
   /**
-   * Current checkbox selections — the set of literal strings the
-   * redactor will target when Apply is clicked. Mutable on purpose:
+   * Current checkbox selections — the set of selection target ids the
+   * redactor will resolve when Apply is clicked. Mutable on purpose:
    * toggle-in/toggle-out operations hit `.add`/`.delete` directly and
    * Svelte's proxy tracking picks up the change.
    *
    * Empty when phase !== 'postParse'.
    */
-  selections = $state<Set<string>>(new Set());
+  selections = $state<Set<SelectionTargetId>>(new Set());
 
   /**
    * Manual candidate additions — user-typed strings grouped by category.
@@ -158,11 +347,11 @@ class AppState {
   );
 
   /**
-   * Candidate text currently in "focused" state — set when the user clicks
-   * the jump-to affordance in the candidates list. The rendered document body
-   * watches this and scrolls the first matching mark into view.
+   * Focused selection target id — set when the user clicks the jump-to
+   * affordance in the candidates list or review banner. The rendered
+   * document body watches this and scrolls the first matching mark into view.
    */
-  focusedCandidate = $state<string | null>(null);
+  focusedCandidate = $state<SelectionTargetId | null>(null);
 
   private focusClearTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -172,12 +361,14 @@ class AppState {
     this.phase = { kind: "parsing", fileName: file.name };
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const analysis = await analyzeZip(bytes, this.seeds);
+      const analyzed = await analyzeZip(bytes, this.seeds);
+      const { analysis, manualSelectionIds } = mergePersistedManualTargets(
+        analyzed,
+        this.manualAdditions,
+      );
       const baseSelections = defaultSelections(analysis);
-      for (const set of this.manualAdditions.values()) {
-        for (const text of set) {
-          baseSelections.add(text);
-        }
+      for (const id of manualSelectionIds) {
+        baseSelections.add(id);
       }
       this.selections = baseSelections;
       this.phase = {
@@ -195,12 +386,12 @@ class AppState {
     }
   }
 
-  toggleSelection(text: string): void {
+  toggleSelection(targetId: SelectionTargetId): void {
     if (this.phase.kind !== "postParse") return;
-    if (this.selections.has(text)) {
-      this.selections.delete(text);
+    if (this.selections.has(targetId)) {
+      this.selections.delete(targetId);
     } else {
-      this.selections.add(text);
+      this.selections.add(targetId);
     }
     // Defensive reactivity: plain Set mutations do not reliably trigger
     // Svelte 5 re-renders across runtime versions. Reassign the reference
@@ -210,8 +401,8 @@ class AppState {
     this.selections = new Set(this.selections);
   }
 
-  isSelected(text: string): boolean {
-    return this.selections.has(text);
+  isSelected(targetId: SelectionTargetId): boolean {
+    return this.selections.has(targetId);
   }
 
   addManualCandidate(category: ManualCategory, text: string): void {
@@ -222,7 +413,11 @@ class AppState {
     if (bucket === undefined) return;
     if (bucket.has(trimmed)) return;
     bucket.add(trimmed);
-    this.selections.add(trimmed);
+    if (this.phase.kind === "postParse") {
+      const ensured = ensureManualTarget(this.phase.analysis, category, trimmed);
+      this.phase = { ...this.phase, analysis: ensured.analysis };
+      this.selections.add(ensured.targetId);
+    }
     this.manualAdditions = new Map(this.manualAdditions);
     this.selections = new Set(this.selections);
   }
@@ -232,13 +427,22 @@ class AppState {
     if (bucket === undefined) return;
     if (!bucket.has(text)) return;
     bucket.delete(text);
-    this.selections.delete(text);
+    if (this.phase.kind === "postParse") {
+      const removed = removeManualTarget(this.phase.analysis, text);
+      this.phase = { ...this.phase, analysis: removed.analysis };
+      if (!removed.keepSelected) {
+        this.selections.delete(removed.targetId);
+      }
+    } else {
+      this.selections.delete(buildSelectionTargetId("manual", text));
+      this.selections.delete(buildSelectionTargetId("auto", text));
+    }
     this.manualAdditions = new Map(this.manualAdditions);
     this.selections = new Set(this.selections);
   }
 
-  jumpToCandidate(text: string): void {
-    this.focusedCandidate = text;
+  jumpToCandidate(targetId: SelectionTargetId): void {
+    this.focusedCandidate = targetId;
     if (this.focusClearTimer !== null) {
       clearTimeout(this.focusClearTimer);
     }
@@ -254,7 +458,7 @@ class AppState {
     this.phase = { kind: "redacting", fileName, bytes, analysis };
 
     try {
-      const report = await applyRedaction(bytes, this.selections);
+      const report = await applyRedaction(bytes, analysis, this.selections);
       const nextPhase = classifyFinalizedReportPhase(report);
       if (nextPhase === "verifyFail") {
         this.phase = { kind: "verifyFail", fileName, report, bytes, analysis };
@@ -291,7 +495,7 @@ class AppState {
     this.phase = { kind: "postParse", fileName, bytes, analysis };
   }
 
-  reviewCandidate(text: string): void {
+  reviewCandidate(targetId: SelectionTargetId): void {
     if (
       this.phase.kind !== "verifyFail" &&
       this.phase.kind !== "downloadWarning" &&
@@ -301,7 +505,9 @@ class AppState {
     }
     const { fileName, bytes, analysis } = this.phase;
     this.phase = { kind: "postParse", fileName, bytes, analysis };
-    this.jumpToCandidate(text);
+    if (analysis.selectionTargetById.has(targetId)) {
+      this.jumpToCandidate(targetId);
+    }
   }
 
   reset(): void {

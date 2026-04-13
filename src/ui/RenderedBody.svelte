@@ -33,38 +33,21 @@
 
   let containerRef = $state<HTMLDivElement | null>(null);
 
-  let allCandidates = $derived.by(() => {
-    const candidateTexts = new Set<string>();
-
-    for (const group of analysis.entityGroups) {
-      for (const literal of group.literals) {
-        candidateTexts.add(literal.text);
-      }
-    }
-
-    for (const pii of analysis.piiCandidates) {
-      candidateTexts.add(pii.text);
-    }
-
-    for (const candidate of analysis.nonPiiCandidates) {
-      candidateTexts.add(candidate.text);
-    }
-
-    for (const bucket of appState.manualAdditions.values()) {
-      for (const text of bucket) {
-        candidateTexts.add(text);
-      }
-    }
-
-    return [...candidateTexts]
-      .sort((a, b) => b.length - a.length || a.localeCompare(b))
+  let allCandidates = $derived.by(() =>
+    [...analysis.selectionTargets]
+      .sort(
+        (a, b) =>
+          b.displayText.length - a.displayText.length ||
+          a.displayText.localeCompare(b.displayText),
+      )
       .map(
-        (text): PreviewCandidate => ({
-          text,
-          selected: appState.selections.has(text),
+        (target): PreviewCandidate => ({
+          selectionTargetId: target.id,
+          text: target.displayText,
+          selected: appState.selections.has(target.id),
         }),
-      );
-  });
+      ),
+  );
 
   let scopeViews = $derived.by(() =>
     renderedDoc.scopes.map((scope, scopeIndex): ScopeView => ({
@@ -99,7 +82,7 @@
     void tick().then(() => {
       if (cancelled || containerRef === null) return;
       mark = containerRef.querySelector<HTMLElement>(
-        `mark[data-text="${cssEscape(focused)}"]`,
+        `mark[data-target-id="${cssEscape(focused)}"]`,
       );
       if (mark === null) return;
       mark.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -167,16 +150,17 @@
                     class:checked={segment.selected}
                     class:unchecked={!segment.selected}
                     data-text={segment.candidate}
+                    data-target-id={segment.selectionTargetId}
                     data-candidate={segment.candidate}
                     tabindex="0"
                     role="button"
                     aria-pressed={segment.selected}
                     aria-label={`Toggle redaction for ${segment.candidate}`}
-                    onclick={() => appState.toggleSelection(segment.candidate)}
+                    onclick={() => appState.toggleSelection(segment.selectionTargetId)}
                     onkeydown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        appState.toggleSelection(segment.candidate);
+                        appState.toggleSelection(segment.selectionTargetId);
                       }
                     }}
                   >

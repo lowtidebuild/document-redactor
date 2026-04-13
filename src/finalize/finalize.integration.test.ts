@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll } from "vitest";
 import JSZip from "jszip";
 
+import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
 import { buildTargetsFromZip as buildPiiTargets } from "../detection/detect-pii.js";
 import { extractTextFromZip } from "../detection/extract-text.js";
 import { verifyRedaction } from "../docx/verify.js";
@@ -93,7 +94,9 @@ describe("Lane A + C + D end-to-end against worst-case bilingual fixture", () =>
 
     // Real run.
     const zip = await JSZip.loadAsync(buf);
-    report = await finalizeRedaction(zip, { targets });
+    report = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings(targets),
+    });
   });
 
   it("the report is shippable (verify clean + word-count sane)", () => {
@@ -116,7 +119,9 @@ describe("Lane A + C + D end-to-end against worst-case bilingual fixture", () =>
     // Run the whole pipeline again on a fresh zip — the hash must match.
     const buf = fs.readFileSync(FIXTURE);
     const zip = await JSZip.loadAsync(buf);
-    const again = await finalizeRedaction(zip, { targets });
+    const again = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings(targets),
+    });
     expect(again.sha256).toBe(report.sha256);
   });
 
@@ -128,7 +133,10 @@ describe("Lane A + C + D end-to-end against worst-case bilingual fixture", () =>
 
   it("reloaded bytes pass verification against the SAME target list", async () => {
     const reloaded = await JSZip.loadAsync(report.outputBytes);
-    const v = await verifyRedaction(reloaded, targets);
+    const v = await verifyRedaction(
+      reloaded,
+      buildResolvedTargetsFromStrings(targets),
+    );
     expect(v.isClean).toBe(true);
     expect(v.survived).toEqual([]);
   });

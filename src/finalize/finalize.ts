@@ -36,6 +36,7 @@
 import type JSZip from "jszip";
 
 import { redactDocx, type RedactionReport } from "../docx/redact-docx.js";
+import type { ResolvedRedactionTarget } from "../selection-targets.js";
 import { computeSha256 } from "./sha256.js";
 import {
   evaluateWordCountSanity,
@@ -45,8 +46,8 @@ import {
 
 /** Options for `finalizeRedaction`. Passes through to `redactDocx`. */
 export interface FinalizeOptions {
-  /** Literal sensitive strings to redact. Required. */
-  readonly targets: ReadonlyArray<string>;
+  /** Structured selected targets to redact + verify. Required. */
+  readonly targets: ReadonlyArray<ResolvedRedactionTarget>;
   /** Override the placeholder. Defaults to `[REDACTED]` per D8.4. */
   readonly placeholder?: string;
   /**
@@ -92,8 +93,13 @@ export async function finalizeRedaction(
   const wordCountBefore = await snapshotWordCount(zip);
 
   // 2. Apply the redaction pipeline (Lane B). This mutates `zip` in place.
-  const redactOptions: { targets: ReadonlyArray<string>; placeholder?: string } = {
-    targets: options.targets,
+  const redactOptions: {
+    targets: ReadonlyArray<string>;
+    verifyTargets: ReadonlyArray<ResolvedRedactionTarget>;
+    placeholder?: string;
+  } = {
+    targets: flattenRedactionLiterals(options.targets),
+    verifyTargets: options.targets,
   };
   if (options.placeholder !== undefined) {
     redactOptions.placeholder = options.placeholder;
@@ -153,4 +159,18 @@ export async function finalizeRedaction(
  */
 export function isShippable(report: FinalizedReport): boolean {
   return report.verify.isClean && report.wordCount.sane;
+}
+
+function flattenRedactionLiterals(
+  targets: readonly ResolvedRedactionTarget[],
+): string[] {
+  const literals = new Set<string>();
+  for (const target of targets) {
+    for (const literal of target.redactionLiterals) {
+      if (literal.length > 0) {
+        literals.add(literal);
+      }
+    }
+  }
+  return [...literals].sort((a, b) => b.length - a.length || a.localeCompare(b));
 }

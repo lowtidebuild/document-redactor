@@ -1,8 +1,10 @@
 <script lang="ts">
+  import type { SelectionTargetId } from "../selection-targets.js";
   import { appState } from "./state.svelte.ts";
   import type { ManualCategory } from "./state.svelte.ts";
 
   type Props = {
+    selectionTargetId: SelectionTargetId;
     text: string;
     meta: string;
     confidence?: number | undefined;
@@ -11,6 +13,7 @@
   };
 
   let {
+    selectionTargetId,
     text,
     meta,
     confidence,
@@ -19,7 +22,7 @@
   }: Props = $props();
 
   function handleToggle(): void {
-    appState.toggleSelection(text);
+    appState.toggleSelection(selectionTargetId);
   }
 
   function handleRemove(): void {
@@ -29,7 +32,7 @@
 
   function handleJump(event: MouseEvent): void {
     event.stopPropagation();
-    appState.jumpToCandidate(text);
+    appState.jumpToCandidate(selectionTargetId);
   }
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -44,8 +47,8 @@
   <button
     type="button"
     class="row"
-    class:on={appState.isSelected(text)}
-    aria-pressed={appState.isSelected(text)}
+    class:on={appState.isSelected(selectionTargetId)}
+    aria-pressed={appState.isSelected(selectionTargetId)}
     onclick={handleToggle}
     onkeydown={handleKeydown}
   >

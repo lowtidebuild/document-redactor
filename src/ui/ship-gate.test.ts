@@ -38,6 +38,7 @@ import {
   classifyFinalizedReportPhase,
 } from "./state.svelte.ts";
 import type { FinalizedReport } from "../finalize/finalize.js";
+import { buildSelectionTargetId } from "../selection-targets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -75,7 +76,8 @@ function makeReport(
         ? []
         : [
             {
-              text: "Pearl Abyss",
+              targetId: buildSelectionTargetId("auto", "ABC Corporation"),
+              text: "ABC Corporation",
               count: 6,
               scope: { kind: "body", path: "word/document.xml" },
             },
@@ -191,7 +193,9 @@ describe("ship gate — manual candidate state flow", () => {
     const before = appState.selections.size;
     appState.addManualCandidate("financial", "USD 1,000,000");
 
-    expect(appState.selections.has("USD 1,000,000")).toBe(true);
+    expect(
+      appState.selections.has(buildSelectionTargetId("manual", "USD 1,000,000")),
+    ).toBe(true);
     expect(appState.manualAdditions.get("financial")?.has("USD 1,000,000")).toBe(true);
     expect(appState.selections.size).toBe(before + 1);
   });
@@ -202,7 +206,9 @@ describe("ship gate — manual candidate state flow", () => {
     appState.addManualCandidate("financial", "USD 1,000,000");
     appState.removeManualCandidate("financial", "USD 1,000,000");
 
-    expect(appState.selections.has("USD 1,000,000")).toBe(false);
+    expect(
+      appState.selections.has(buildSelectionTargetId("manual", "USD 1,000,000")),
+    ).toBe(false);
     expect(appState.manualAdditions.get("financial")?.has("USD 1,000,000")).toBe(false);
   });
 
@@ -211,7 +217,9 @@ describe("ship gate — manual candidate state flow", () => {
     appState.addManualCandidate("financial", "USD 1,000,000");
     await appState.loadFile(loadFixtureFile("bilingual_nda_worst_case.docx"));
 
-    expect(appState.selections.has("USD 1,000,000")).toBe(true);
+    expect(
+      appState.selections.has(buildSelectionTargetId("manual", "USD 1,000,000")),
+    ).toBe(true);
     expect(appState.manualAdditions.get("financial")?.has("USD 1,000,000")).toBe(true);
   });
 
@@ -238,8 +246,9 @@ describe("ship gate — focused candidate lifecycle", () => {
   it("jumpToCandidate sets focusedCandidate and auto-clears after 1.2s", async () => {
     await appState.loadFile(loadFixtureFile("bilingual_nda_worst_case.docx"));
 
-    appState.jumpToCandidate("ABC Corporation");
-    expect(appState.focusedCandidate).toBe("ABC Corporation");
+    const targetId = buildSelectionTargetId("auto", "ABC Corporation");
+    appState.jumpToCandidate(targetId);
+    expect(appState.focusedCandidate).toBe(targetId);
 
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
@@ -249,7 +258,7 @@ describe("ship gate — focused candidate lifecycle", () => {
   it("reset clears focusedCandidate", async () => {
     await appState.loadFile(loadFixtureFile("bilingual_nda_worst_case.docx"));
 
-    appState.jumpToCandidate("ABC Corporation");
+    appState.jumpToCandidate(buildSelectionTargetId("auto", "ABC Corporation"));
     appState.reset();
 
     expect(appState.focusedCandidate).toBeNull();
@@ -306,10 +315,11 @@ describe("ship gate — verification recovery flow", () => {
     const report = makeReport({ verifyIsClean: false, wordCountSane: true });
     appState.phase = { kind: "verifyFail", fileName, bytes, analysis, report };
 
-    appState.reviewCandidate("Pearl Abyss");
+    const targetId = buildSelectionTargetId("auto", "ABC Corporation");
+    appState.reviewCandidate(targetId);
 
     expect(appState.phase.kind).toBe("postParse");
-    expect(appState.focusedCandidate).toBe("Pearl Abyss");
+    expect(appState.focusedCandidate).toBe(targetId);
   });
 
   it("reviewCandidate from downloadWarning returns to postParse and sets focusedCandidate", () => {
@@ -326,10 +336,11 @@ describe("ship gate — verification recovery flow", () => {
       report,
     };
 
-    appState.reviewCandidate("Pearl Abyss");
+    const targetId = buildSelectionTargetId("auto", "ABC Corporation");
+    appState.reviewCandidate(targetId);
 
     expect(appState.phase.kind).toBe("postParse");
-    expect(appState.focusedCandidate).toBe("Pearl Abyss");
+    expect(appState.focusedCandidate).toBe(targetId);
   });
 
   it("backToReview works from downloadWarning", () => {

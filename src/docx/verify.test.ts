@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import JSZip from "jszip";
 
+import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
 import { verifyRedaction } from "./verify.js";
 import type { Scope } from "./types.js";
 
@@ -19,12 +20,16 @@ function bodyWith(text: string): string {
   return `<w:document ${W_NS}><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`;
 }
 
+function resolved(...texts: string[]) {
+  return buildResolvedTargetsFromStrings(texts);
+}
+
 describe("verifyRedaction", () => {
   it("returns clean for an empty target list", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("ABC Corporation"),
     });
-    const result = await verifyRedaction(zip, []);
+    const result = await verifyRedaction(zip, resolved());
     expect(result.isClean).toBe(true);
     expect(result.survived).toEqual([]);
     expect(result.stringsTested).toBe(0);
@@ -34,7 +39,7 @@ describe("verifyRedaction", () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("[REDACTED] world"),
     });
-    const result = await verifyRedaction(zip, ["ABC Corporation"]);
+    const result = await verifyRedaction(zip, resolved("ABC Corporation"));
     expect(result.isClean).toBe(true);
     expect(result.survived).toEqual([]);
   });
@@ -43,7 +48,7 @@ describe("verifyRedaction", () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("ABC Corporation is here"),
     });
-    const result = await verifyRedaction(zip, ["ABC Corporation"]);
+    const result = await verifyRedaction(zip, resolved("ABC Corporation"));
     expect(result.isClean).toBe(false);
     expect(result.survived).toHaveLength(1);
     expect(result.survived[0]!.text).toBe("ABC Corporation");
@@ -58,7 +63,7 @@ describe("verifyRedaction", () => {
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/header1.xml": `<w:hdr ${W_NS}><w:p><w:r><w:t>Confidential — ABC Corp internal</w:t></w:r></w:p></w:hdr>`,
     });
-    const result = await verifyRedaction(zip, ["ABC Corp"]);
+    const result = await verifyRedaction(zip, resolved("ABC Corp"));
     expect(result.isClean).toBe(false);
     expect(result.survived).toHaveLength(1);
     expect(result.survived[0]!.scope.path).toBe("word/header1.xml");
@@ -68,7 +73,7 @@ describe("verifyRedaction", () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("ABC ABC ABC and ABC again"),
     });
-    const result = await verifyRedaction(zip, ["ABC"]);
+    const result = await verifyRedaction(zip, resolved("ABC"));
     expect(result.isClean).toBe(false);
     expect(result.survived[0]!.count).toBe(4);
   });
@@ -79,7 +84,7 @@ describe("verifyRedaction", () => {
       "word/header1.xml": `<w:hdr ${W_NS}><w:p><w:r><w:t>ABC in header</w:t></w:r></w:p></w:hdr>`,
       "word/footer1.xml": `<w:ftr ${W_NS}><w:p><w:r><w:t>ABC in footer</w:t></w:r></w:p></w:ftr>`,
     });
-    const result = await verifyRedaction(zip, ["ABC"]);
+    const result = await verifyRedaction(zip, resolved("ABC"));
     expect(result.isClean).toBe(false);
     expect(result.survived).toHaveLength(3);
     expect(result.survived.map((s) => s.scope.path).sort()).toEqual([
@@ -96,8 +101,7 @@ describe("verifyRedaction", () => {
       ),
     });
     const result = await verifyRedaction(zip, [
-      "ABC Corporation",
-      "Sunrise Ventures",
+      ...resolved("ABC Corporation", "Sunrise Ventures"),
     ]);
     expect(result.isClean).toBe(false);
     expect(result.survived).toHaveLength(2);
@@ -107,7 +111,7 @@ describe("verifyRedaction", () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("ABC"),
     });
-    const result = await verifyRedaction(zip, ["ABC", "ABC", "ABC"]);
+    const result = await verifyRedaction(zip, resolved("ABC", "ABC", "ABC"));
     expect(result.stringsTested).toBe(1);
     expect(result.survived).toHaveLength(1);
     expect(result.survived[0]!.count).toBe(1);
@@ -117,7 +121,7 @@ describe("verifyRedaction", () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("hello"),
     });
-    const result = await verifyRedaction(zip, ["", "ABC"]);
+    const result = await verifyRedaction(zip, resolved("", "ABC"));
     expect(result.stringsTested).toBe(1);
     expect(result.isClean).toBe(true);
   });
@@ -127,7 +131,7 @@ describe("verifyRedaction", () => {
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/footnotes.xml": `<w:footnotes ${W_NS}><w:footnote><w:p><w:r><w:t>Note about ABC Corp</w:t></w:r></w:p></w:footnote></w:footnotes>`,
     });
-    const result = await verifyRedaction(zip, ["ABC Corp"]);
+    const result = await verifyRedaction(zip, resolved("ABC Corp"));
     expect(result.isClean).toBe(false);
     expect(result.survived[0]!.scope.kind).toBe("footnotes");
   });
@@ -137,7 +141,7 @@ describe("verifyRedaction", () => {
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/comments.xml": `<w:comments ${W_NS}><w:comment><w:p><w:r><w:t>kim@abc-corp.kr</w:t></w:r></w:p></w:comment></w:comments>`,
     });
-    const result = await verifyRedaction(zip, ["kim@abc-corp.kr"]);
+    const result = await verifyRedaction(zip, resolved("kim@abc-corp.kr"));
     expect(result.isClean).toBe(false);
     expect(result.survived[0]!.scope.kind).toBe("comments");
   });
@@ -149,7 +153,7 @@ describe("verifyRedaction", () => {
       "word/footer1.xml": `<w:ftr ${W_NS}/>`,
       "word/footnotes.xml": `<w:footnotes ${W_NS}/>`,
     });
-    const result = await verifyRedaction(zip, ["x"]);
+    const result = await verifyRedaction(zip, resolved("x"));
     expect(result.scopesChecked).toBe(4);
   });
 
@@ -158,7 +162,7 @@ describe("verifyRedaction", () => {
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId1" Type="hyperlink" Target="mailto:contact@pearlabyss.com" TargetMode="External"/></Relationships>`,
     });
-    const result = await verifyRedaction(zip, ["contact@pearlabyss.com"]);
+    const result = await verifyRedaction(zip, resolved("contact@pearlabyss.com"));
     expect(result.isClean).toBe(false);
     expect(result.survived).toHaveLength(1);
     expect((result.survived[0]!.scope as { kind: string }).kind).toBe("rels");
@@ -170,7 +174,7 @@ describe("verifyRedaction", () => {
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"></Relationships>`,
     });
-    const result = await verifyRedaction(zip, ["contact@pearlabyss.com"]);
+    const result = await verifyRedaction(zip, resolved("contact@pearlabyss.com"));
     expect(result.isClean).toBe(true);
     expect(result.survived).toEqual([]);
   });
@@ -183,9 +187,11 @@ describe("verifyRedaction", () => {
       "word/_rels/footer1.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="mailto:footer@example.com"/></Relationships>`,
     });
     const result = await verifyRedaction(zip, [
-      "header2@example.com",
-      "doc@example.com",
-      "footer@example.com",
+      ...resolved(
+        "header2@example.com",
+        "doc@example.com",
+        "footer@example.com",
+      ),
     ]);
     expect(result.survived.map((entry) => entry.scope.path)).toEqual([
       "word/_rels/document.xml.rels",
@@ -199,7 +205,7 @@ describe("verifyRedaction", () => {
       "word/document.xml": bodyWith("[REDACTED]"),
       "_rels/.rels": `<?xml version="1.0"?><Relationships><Relationship Target="mailto:root@example.com"/></Relationships>`,
     });
-    const result = await verifyRedaction(zip, ["root@example.com"]);
+    const result = await verifyRedaction(zip, resolved("root@example.com"));
     expect(result.isClean).toBe(false);
     expect(result.survived[0]!.scope.path).toBe("_rels/.rels");
   });
@@ -210,7 +216,7 @@ describe("verifyRedaction", () => {
       "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships></Relationships>`,
       "_rels/.rels": `<?xml version="1.0"?><Relationships></Relationships>`,
     });
-    const result = await verifyRedaction(zip, ["x"]);
+    const result = await verifyRedaction(zip, resolved("x"));
     expect(result.scopesChecked).toBe(3);
   });
 
@@ -218,7 +224,7 @@ describe("verifyRedaction", () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("매수인은 김철수이다"),
     });
-    const result = await verifyRedaction(zip, ["김철수"]);
+    const result = await verifyRedaction(zip, resolved("김철수"));
     expect(result.isClean).toBe(false);
     expect(result.survived[0]!.text).toBe("김철수");
   });

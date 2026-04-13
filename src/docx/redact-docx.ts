@@ -30,6 +30,10 @@
 
 import type JSZip from "jszip";
 
+import {
+  buildResolvedTargetsFromStrings,
+  type ResolvedRedactionTarget,
+} from "../selection-targets.js";
 import { flattenFieldsInZip } from "./flatten-fields.js";
 import { flattenTrackChanges } from "./flatten-track-changes.js";
 import { redactScopeXml, DEFAULT_PLACEHOLDER } from "./redact.js";
@@ -50,6 +54,8 @@ export interface RedactDocxOptions {
    * orchestrator does not produce or filter this list.
    */
   readonly targets: ReadonlyArray<string>;
+  /** Structured verification payload. Defaults to wrapping `targets` 1:1. */
+  readonly verifyTargets?: ReadonlyArray<ResolvedRedactionTarget>;
   /**
    * Override the placeholder string. Defaults to `[REDACTED]` per D8.4.
    * The production UI never overrides this; the parameter exists so tests
@@ -128,7 +134,10 @@ export async function redactDocx(
 
   // Step 6: round-trip verify against the same target list. If any sensitive
   // string survived, the verifier flags it; the caller blocks the download.
-  const verify = await verifyRedaction(zip, targets);
+  const verify = await verifyRedaction(
+    zip,
+    options.verifyTargets ?? buildResolvedTargetsFromStrings(targets),
+  );
 
   return { scopeMutations, verify };
 }

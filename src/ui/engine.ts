@@ -37,6 +37,7 @@ import {
   type ScopedStructuralDefinition,
 } from "../detection/detect-all.js";
 import { extractTextFromZip } from "../detection/extract-text.js";
+import { normalizeForMatching } from "../detection/normalize.js";
 import { ROLE_BLACKLIST_EN } from "../detection/rules/role-blacklist-en.js";
 import { ROLE_BLACKLIST_KO } from "../detection/rules/role-blacklist-ko.js";
 import { listScopes } from "../docx/scopes.js";
@@ -55,17 +56,44 @@ import {
   type IdentifierSubcategory,
   type UiPiiKind,
 } from "./pii-kinds.js";
+import {
+  buildSelectionTargetId,
+  buildSelectionTargets,
+  indexSelectionTargets,
+  resolveSelectedTargets,
+  type ResolvedRedactionTarget,
+  type SelectionOccurrenceInput,
+  type SelectionReviewSection,
+  type SelectionTarget,
+  type SelectionTargetId,
+} from "../selection-targets.js";
 
 /** Aggregated PII candidate — one per unique text, with scope + count info. */
 export interface PiiCandidate {
   /** The literal substring to redact. */
   readonly text: string;
+  /** Stable selection id backing the UI row. */
+  readonly selectionTargetId: SelectionTargetId;
   /** Which regex category detected it (email, phone-kr, rrn, ...). */
   readonly kind: UiPiiKind;
   /** Total occurrences across every scope. */
   readonly count: number;
   /** Distinct scopes this candidate appeared in. */
   readonly scopes: ReadonlyArray<Scope>;
+}
+
+export interface LiteralCandidate {
+  readonly text: string;
+  readonly seed: string;
+  readonly count: number;
+  readonly selectionTargetId: SelectionTargetId;
+}
+
+export interface DefinedCandidate {
+  readonly text: string;
+  readonly seed: string;
+  readonly count: number;
+  readonly selectionTargetId: SelectionTargetId;
 }
 
 /** High-level file stats shown in the main header pill row. */
@@ -76,6 +104,7 @@ export interface FileStats {
 
 export interface NonPiiCandidate {
   readonly text: string;
+  readonly selectionTargetId: SelectionTargetId;
   readonly ruleId: string;
   readonly category:
     | "financial"
@@ -93,15 +122,31 @@ export interface NonPiiCandidate {
 export interface Analysis {
   /** One variant group per seed entity, in input order. */
   readonly entityGroups: ReadonlyArray<VariantGroup>;
+  /** Deduped literal candidates used by the Parties section. */
+  readonly literalCandidates: ReadonlyArray<LiteralCandidate>;
+  /** Deduped defined-term candidates used by the Defined aliases section. */
+  readonly definedCandidates: ReadonlyArray<DefinedCandidate>;
   /** Deduped PII candidates across every scope. */
   readonly piiCandidates: ReadonlyArray<PiiCandidate>;
   /** Deduped Phase 1 non-PII candidates across every scope. */
   readonly nonPiiCandidates: ReadonlyArray<NonPiiCandidate>;
+  /** Explicit review/export target contract. */
+  readonly selectionTargets: ReadonlyArray<SelectionTarget>;
+  /** By-id lookup used by review and selection-resolution seams. */
+  readonly selectionTargetById: ReadonlyMap<SelectionTargetId, SelectionTarget>;
   readonly fileStats: FileStats;
 }
 
 type NonPiiCategory = NonPiiCandidate["category"];
 const ENGLISH_ARTICLES = new Set(["the", "a", "an"]);
+const NON_PII_SECTION: Readonly<Record<NonPiiCategory, SelectionReviewSection>> = {
+  financial: "financial",
+  temporal: "temporal",
+  entities: "entities",
+  structural: "entities",
+  legal: "legal",
+  heuristics: "heuristics",
+};
 
 /** Extra knobs for `applyRedaction`. Mirrors `FinalizeOptions`. */
 export interface ApplyOptions {
@@ -146,6 +191,8 @@ export async function analyzeZip(
   const entityGroups = seeds.map((seed) =>
     propagateVariants(seed, corpus, clauses),
   );
+  const literalCandidates = collectLiteralCandidates(entityGroups);
+  const definedCandidates = collectDefinedCandidates(entityGroups);
 
   const definedTerms = new Set(
     entityGroups.flatMap((group) => group.defined.map((candidate) => candidate.text)),
@@ -155,11 +202,58 @@ export async function analyzeZip(
       !definedTerms.has(candidate.text) &&
       !isRoleLikePlaceholder(candidate.text),
   );
+  const selectionTargets = buildSelectionTargets([
+    ...literalCandidates.map((candidate) =>
+      toSelectionOccurrence(candidate.text, {
+        sourceKind: "literal",
+        reviewSection: "literals",
+        defaultSelected: true,
+      }),
+    ),
+    ...definedCandidates.map((candidate) =>
+      toSelectionOccurrence(candidate.text, {
+        sourceKind: "literal",
+        reviewSection: "defined",
+        defaultSelected: false,
+      }),
+    ),
+    ...piiCandidates.map((candidate) =>
+      toSelectionOccurrence(candidate.text, {
+        scope: candidate.scopes[0] ?? null,
+        sourceKind: "pii",
+        ruleId: `identifiers.${candidate.kind}`,
+        reviewSection: "pii",
+        defaultSelected: true,
+      }),
+    ),
+    ...filteredNonPiiCandidates.map((candidate) =>
+      toSelectionOccurrence(candidate.text, {
+        scope: candidate.scopes[0] ?? null,
+        sourceKind: "nonPii",
+        ruleId: candidate.ruleId,
+        reviewSection: NON_PII_SECTION[candidate.category],
+        defaultSelected: candidate.confidence === 1.0,
+      }),
+    ),
+  ]);
+  const selectionTargetById = indexSelectionTargets(selectionTargets);
+  const piiCandidatesWithIds = piiCandidates.map((candidate) => ({
+    ...candidate,
+    selectionTargetId: buildSelectionTargetId("auto", candidate.text),
+  }));
+  const nonPiiCandidatesWithIds = filteredNonPiiCandidates.map((candidate) => ({
+    ...candidate,
+    selectionTargetId: buildSelectionTargetId("auto", candidate.text),
+  }));
 
   return {
     entityGroups,
-    piiCandidates,
-    nonPiiCandidates: filteredNonPiiCandidates,
+    literalCandidates,
+    definedCandidates,
+    piiCandidates: piiCandidatesWithIds,
+    nonPiiCandidates: nonPiiCandidatesWithIds,
+    selectionTargets,
+    selectionTargetById,
     fileStats,
   };
 }
@@ -174,22 +268,12 @@ export async function analyzeZip(
  * can `.add()` and `.delete()` in response to checkbox events without
  * rebuilding the whole set.
  */
-export function defaultSelections(analysis: Analysis): Set<string> {
-  const out = new Set<string>();
-  for (const group of analysis.entityGroups) {
-    for (const cand of group.literals) {
-      out.add(cand.text);
-    }
-  }
-  for (const pii of analysis.piiCandidates) {
-    out.add(pii.text);
-  }
-  for (const candidate of analysis.nonPiiCandidates) {
-    if (candidate.confidence === 1.0) {
-      out.add(candidate.text);
-    }
-  }
-  return out;
+export function defaultSelections(analysis: Analysis): Set<SelectionTargetId> {
+  return new Set(
+    analysis.selectionTargets
+      .filter((target) => target.defaultSelected)
+      .map((target) => target.id),
+  );
 }
 
 /**
@@ -200,17 +284,19 @@ export function defaultSelections(analysis: Analysis): Set<string> {
  */
 export async function applyRedaction(
   bytes: Uint8Array,
-  selections: ReadonlySet<string>,
+  analysis: Analysis,
+  selections: ReadonlySet<SelectionTargetId>,
   opts: ApplyOptions = {},
 ): Promise<FinalizedReport> {
   // Fresh reload every time — see docstring.
   const zip = await JSZip.loadAsync(bytes.slice());
-  const targets = [...selections];
   const finalizeOpts: {
-    targets: ReadonlyArray<string>;
+    targets: ReadonlyArray<ResolvedRedactionTarget>;
     placeholder?: string;
     wordCountThresholdPct?: number;
-  } = { targets };
+  } = {
+    targets: resolveSelectedTargets(analysis.selectionTargets, selections),
+  };
   if (opts.placeholder !== undefined) {
     finalizeOpts.placeholder = opts.placeholder;
   }
@@ -259,6 +345,7 @@ async function aggregateAll(zip: JSZip): Promise<{
 
   const piiCandidates = [...piiByText.entries()].map(([text, info]) => ({
     text,
+    selectionTargetId: buildSelectionTargetId("auto", text),
     kind: info.kind,
     count: info.count,
     scopes: info.scopes,
@@ -267,6 +354,7 @@ async function aggregateAll(zip: JSZip): Promise<{
   const nonPiiCandidates = [...nonPiiByText.entries()]
     .map(([text, info]) => ({
       text,
+      selectionTargetId: buildSelectionTargetId("auto", text),
       ruleId: info.ruleId,
       category: info.category,
       confidence: info.confidence,
@@ -384,4 +472,61 @@ function isRoleLikePlaceholder(text: string): boolean {
     .filter(Boolean)
     .filter((token) => !ENGLISH_ARTICLES.has(token));
   return tokens.length > 0 && tokens.every((token) => ROLE_BLACKLIST_EN.has(token));
+}
+
+function collectLiteralCandidates(
+  groups: readonly VariantGroup[],
+): LiteralCandidate[] {
+  const byText = new Map<string, LiteralCandidate>();
+  for (const group of groups) {
+    for (const candidate of group.literals) {
+      if (byText.has(candidate.text)) continue;
+      byText.set(candidate.text, {
+        text: candidate.text,
+        seed: group.seed,
+        count: candidate.count,
+        selectionTargetId: buildSelectionTargetId("auto", candidate.text),
+      });
+    }
+  }
+  return [...byText.values()];
+}
+
+function collectDefinedCandidates(
+  groups: readonly VariantGroup[],
+): DefinedCandidate[] {
+  const byText = new Map<string, DefinedCandidate>();
+  for (const group of groups) {
+    for (const candidate of group.defined) {
+      if (byText.has(candidate.text)) continue;
+      byText.set(candidate.text, {
+        text: candidate.text,
+        seed: group.seed,
+        count: candidate.count,
+        selectionTargetId: buildSelectionTargetId("auto", candidate.text),
+      });
+    }
+  }
+  return [...byText.values()];
+}
+
+function toSelectionOccurrence(
+  text: string,
+  options: {
+    scope?: Scope | null;
+    ruleId?: string | null;
+    sourceKind: SelectionOccurrenceInput["sourceKind"];
+    reviewSection: SelectionReviewSection;
+    defaultSelected: boolean;
+  },
+): SelectionOccurrenceInput {
+  return {
+    scope: options.scope ?? null,
+    text,
+    normalizedText: normalizeForMatching(text).text,
+    ruleId: options.ruleId ?? null,
+    sourceKind: options.sourceKind,
+    reviewSection: options.reviewSection,
+    defaultSelected: options.defaultSelected,
+  };
 }

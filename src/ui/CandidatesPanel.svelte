@@ -5,6 +5,7 @@
   with per-category manual add for under-cover and uncheck for over-cover.
 -->
 <script lang="ts">
+  import { buildSelectionTargetId } from "../selection-targets.js";
   import CategorySection from "./CategorySection.svelte";
   import type { Analysis } from "./engine.ts";
   import { piiKindLabel } from "./pii-kinds.js";
@@ -12,6 +13,7 @@
   import type { ManualCategory } from "./state.svelte.ts";
 
   type CategoryCandidate = {
+    selectionTargetId: string;
     text: string;
     meta: string;
     confidence?: number | undefined;
@@ -160,11 +162,30 @@
       seen.add(candidate.text);
       out.push(candidate);
     };
+    const manualCategoryForText = (text: string): ManualCategory | undefined => {
+      for (const [category, bucket] of appState.manualAdditions.entries()) {
+        if (bucket.has(text)) return category;
+      }
+      return undefined;
+    };
+    const targetHasManual = (selectionTargetId: string): boolean =>
+      analysis.selectionTargetById
+        .get(selectionTargetId)
+        ?.sourceKinds.includes("manual") ?? false;
     const appendManual = (out: CategoryCandidate[], category: ManualCategory): void => {
       const bucket = appState.manualAdditions.get(category);
       if (bucket === undefined) return;
       for (const text of bucket) {
-        push(out, { text, meta: "manual", isManual: true, manualCategory: category });
+        const selectionTargetId =
+          analysis.selectionTargetById.get(buildSelectionTargetId("auto", text))
+            ?.id ?? buildSelectionTargetId("manual", text);
+        push(out, {
+          selectionTargetId,
+          text,
+          meta: "manual",
+          isManual: true,
+          manualCategory: category,
+        });
       }
     };
     const collectNonPii = (
@@ -176,10 +197,12 @@
       for (const candidate of analysis.nonPiiCandidates) {
         if (!allowed.has(candidate.category)) continue;
         push(out, {
+          selectionTargetId: candidate.selectionTargetId,
           text: candidate.text,
           meta: `${ruleSubcategory(candidate.ruleId)} · ${formatScopes(candidate.scopes)}`,
           confidence: candidate.confidence,
-          isManual: false,
+          isManual: targetHasManual(candidate.selectionTargetId),
+          manualCategory: manualCategoryForText(candidate.text),
         });
       }
       if (manualCategory !== undefined) appendManual(out, manualCategory);
@@ -187,34 +210,36 @@
     };
 
     const literals: CategoryCandidate[] = [];
-    for (const group of analysis.entityGroups) {
-      for (const candidate of group.literals) {
-        push(literals, {
-          text: candidate.text,
-          meta: `literal · ${group.seed}`,
-          isManual: false,
-        });
-      }
+    for (const candidate of analysis.literalCandidates) {
+      push(literals, {
+        selectionTargetId: candidate.selectionTargetId,
+        text: candidate.text,
+        meta: `literal · ${candidate.seed}`,
+        isManual: targetHasManual(candidate.selectionTargetId),
+        manualCategory: manualCategoryForText(candidate.text),
+      });
     }
     appendManual(literals, "literals");
 
     const defined: CategoryCandidate[] = [];
-    for (const group of analysis.entityGroups) {
-      for (const candidate of group.defined) {
-        push(defined, {
-          text: candidate.text,
-          meta: `from definition · ${group.seed}`,
-          isManual: false,
-        });
-      }
+    for (const candidate of analysis.definedCandidates) {
+      push(defined, {
+        selectionTargetId: candidate.selectionTargetId,
+        text: candidate.text,
+        meta: `from definition · ${candidate.seed}`,
+        isManual: targetHasManual(candidate.selectionTargetId),
+        manualCategory: manualCategoryForText(candidate.text),
+      });
     }
 
     const pii: CategoryCandidate[] = [];
     for (const candidate of analysis.piiCandidates) {
       push(pii, {
+        selectionTargetId: candidate.selectionTargetId,
         text: candidate.text,
         meta: `${piiKindLabel(candidate.kind)} · ${formatScopes(candidate.scopes)}`,
-        isManual: false,
+        isManual: targetHasManual(candidate.selectionTargetId),
+        manualCategory: manualCategoryForText(candidate.text),
       });
     }
 

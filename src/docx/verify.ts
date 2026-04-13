@@ -28,13 +28,21 @@
 
 import type JSZip from "jszip";
 
-import { listScopes, readScopeXml } from "./scopes.js";
+import type {
+  ResolvedRedactionTarget,
+  SelectionTargetId,
+} from "../selection-targets.js";
+import { collectVerifySurfaces } from "./verify-surfaces.js";
 import type { Scope } from "./types.js";
 
 /** One sensitive string that survived in one scope. */
 export interface SurvivedString {
+  /** Which reviewed target this survival corresponds to. */
+  readonly targetId: SelectionTargetId;
   /** The literal sensitive string that should not have been present. */
   readonly text: string;
+  /** Which exact literal variant matched, if different from `text`. */
+  readonly matchedLiteral?: string;
   /** Which scope the survival was found in. */
   readonly scope: Scope;
   /** How many times the string appeared in this scope. */
@@ -55,77 +63,85 @@ export interface VerifyResult {
 
 /**
  * Verify that none of the given sensitive strings appear in any text-bearing
- * scope of the given DOCX zip. Reads scope XML, runs plain-string indexOf
- * scans, returns a structured report.
+ * scope of the given DOCX zip. Uses extracted visible text for ordinary Word
+ * scopes, explicit field-instruction surfaces for field code leak vectors,
+ * and explicit relationship targets for hyperlink leak vectors.
  *
- * No regex, no Unicode normalization, no run coalescing — by design. If the
- * redactor's coalescer was buggy and "ABC Corporation" survived as
- * `<w:t>ABC</w:t><w:t> Corporation</w:t>`, the indexOf scan against the
- * raw XML scope content would still find both `ABC` and `Corporation`
- * substrings. So callers should pass the FULL sensitive string AND any
- * obvious sub-string anchors (e.g. just the company name) for double safety.
- *
- * The trade-off is: the indexOf scan can produce false positives (e.g.
- * the string "Sunrise" appearing inside an unrelated XML attribute name).
- * That's an acceptable cost for the safety guarantee — false positives
- * make the user re-run with Paranoid mode or add manual aliases, false
- * negatives leak.
+ * Still deliberately simple: no regex, no Unicode normalization, and no
+ * dependency on detection rules. The verifier trusts only the selected target
+ * payload plus parsed output surfaces.
  */
 export async function verifyRedaction(
   zip: JSZip,
-  sensitiveStrings: ReadonlyArray<string>,
+  targets: ReadonlyArray<ResolvedRedactionTarget>,
 ): Promise<VerifyResult> {
-  // Filter empty / dedupe — empty would match every position; dupes are wasted work.
-  const targets = [...new Set(sensitiveStrings.filter((s) => s.length > 0))];
+  const activeTargets = targets.filter(
+    (target) => target.verificationLiterals.some((literal) => literal.length > 0),
+  );
+  const surfaces = await collectVerifySurfaces(zip);
+  const survivedByKey = new Map<string, SurvivedString>();
 
-  // Walk every text-bearing scope, including comments — the comments
-  // file should already be gone by this point (dropCommentsPart) but
-  // we walk it defensively in case the orchestrator forgot.
-  const scopes = listScopes(zip);
-  const survived: SurvivedString[] = [];
-
-  for (const scope of scopes) {
-    const xml = await readScopeXml(zip, scope);
-    for (const target of targets) {
-      const count = countOccurrences(xml, target);
-      if (count > 0) {
-        survived.push({ text: target, scope, count });
-      }
-    }
-  }
-
-  const relsPaths = listRelsPaths(zip);
-  for (const relsPath of relsPaths) {
-    const relsXml = await zip.file(relsPath)!.async("string");
-    for (const target of targets) {
-      const count = countOccurrences(relsXml, target);
-      if (count > 0) {
-        survived.push({
-          text: target,
-          scope: { kind: "rels", path: relsPath } as unknown as Scope,
+  for (const surface of surfaces.scopeTextSurfaces) {
+    for (const target of activeTargets) {
+      for (const literal of target.verificationLiterals) {
+        const count = countOccurrences(surface.text, literal);
+        if (count === 0) continue;
+        mergeSurvival(
+          survivedByKey,
+          target,
+          surface.scope,
           count,
-        });
+          literal,
+        );
       }
     }
   }
+
+  for (const surface of surfaces.scopeInstrSurfaces) {
+    for (const target of activeTargets) {
+      for (const literal of target.verificationLiterals) {
+        const count = countOccurrences(surface.text, literal);
+        if (count === 0) continue;
+        mergeSurvival(
+          survivedByKey,
+          target,
+          surface.scope,
+          count,
+          literal,
+        );
+      }
+    }
+  }
+
+  for (const surface of surfaces.relsTargetSurfaces) {
+    const scope = { kind: "rels", path: surface.path } as unknown as Scope;
+    for (const target of activeTargets) {
+      for (const literal of target.verificationLiterals) {
+        const count = countOccurrences(surface.text, literal);
+        if (count === 0) continue;
+        mergeSurvival(
+          survivedByKey,
+          target,
+          scope,
+          count,
+          literal,
+        );
+      }
+    }
+  }
+
+  const survived = [...survivedByKey.values()];
 
   return {
     isClean: survived.length === 0,
     survived,
-    scopesChecked: scopes.length + relsPaths.length,
-    stringsTested: targets.length,
+    scopesChecked: surfaces.scopesChecked,
+    stringsTested: activeTargets.reduce(
+      (sum, target) =>
+        sum + target.verificationLiterals.filter((literal) => literal.length > 0).length,
+      0,
+    ),
   };
-}
-
-function listRelsPaths(zip: JSZip): string[] {
-  const paths: string[] = [];
-  zip.forEach((relativePath, file) => {
-    if (file.dir) return;
-    if (relativePath.endsWith(".rels")) {
-      paths.push(relativePath);
-    }
-  });
-  return paths.sort();
 }
 
 /**
@@ -143,4 +159,41 @@ function countOccurrences(haystack: string, needle: string): number {
     count++;
     from = idx + needle.length;
   }
+}
+
+function mergeSurvival(
+  survivedByKey: Map<string, SurvivedString>,
+  target: ResolvedRedactionTarget,
+  scope: Scope,
+  count: number,
+  matchedLiteral: string,
+): void {
+  const key = `${target.id}\0${scope.path}`;
+  const existing = survivedByKey.get(key);
+  if (existing === undefined) {
+    survivedByKey.set(
+      key,
+      matchedLiteral === target.displayText
+        ? {
+            targetId: target.id,
+            text: target.displayText,
+            scope,
+            count,
+          }
+        : {
+            targetId: target.id,
+            text: target.displayText,
+            matchedLiteral,
+            scope,
+            count,
+          },
+    );
+    return;
+  }
+
+  survivedByKey.set(key, {
+    ...existing,
+    count: existing.count + count,
+    matchedLiteral: existing.matchedLiteral ?? matchedLiteral,
+  });
 }

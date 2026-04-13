@@ -6,6 +6,7 @@
   type SectionCategory = ManualCategory | "defined" | "pii" | "heuristics";
 
   type CategoryCandidate = {
+    selectionTargetId: string;
     text: string;
     meta: string;
     confidence?: number | undefined;
@@ -64,8 +65,9 @@
     <p class="cat-sub">{subHint}</p>
 
     <div class="cat-body">
-      {#each candidates as candidate (candidate.text)}
+      {#each candidates as candidate (candidate.selectionTargetId)}
         <CandidateRow
+          selectionTargetId={candidate.selectionTargetId}
           text={candidate.text}
           meta={candidate.meta}
           confidence={candidate.confidence}

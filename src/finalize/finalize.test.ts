@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import JSZip from "jszip";
 
+import {
+  buildResolvedTargetsFromStrings,
+  buildSelectionTargetId,
+} from "../selection-targets.js";
 import { finalizeRedaction, isShippable } from "./finalize.js";
 
 const W_NS = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`;
@@ -22,7 +26,7 @@ describe("finalizeRedaction — happy path", () => {
       "Contact ABC Corporation at kim@abc.kr for details.",
     );
     const result = await finalizeRedaction(zip, {
-      targets: ["ABC Corporation", "kim@abc.kr"],
+      targets: buildResolvedTargetsFromStrings(["ABC Corporation", "kim@abc.kr"]),
     });
 
     expect(result.verify.isClean).toBe(true);
@@ -35,13 +39,17 @@ describe("finalizeRedaction — happy path", () => {
 
   it("includes the scope mutation list from redactDocx", async () => {
     const zip = await syntheticDocx("ABC signed the deal.");
-    const result = await finalizeRedaction(zip, { targets: ["ABC"] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings(["ABC"]),
+    });
     expect(result.scopeMutations.length).toBeGreaterThan(0);
   });
 
   it("produces bytes that can be re-loaded as a DOCX zip", async () => {
     const zip = await syntheticDocx("Hello ABC world.");
-    const result = await finalizeRedaction(zip, { targets: ["ABC"] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings(["ABC"]),
+    });
     const reloaded = await JSZip.loadAsync(result.outputBytes);
     expect(reloaded.file("word/document.xml")).not.toBeNull();
   });
@@ -50,15 +58,21 @@ describe("finalizeRedaction — happy path", () => {
     // JSZip.generateAsync bakes a timestamp by default. We set `date: 0`
     // inside finalizeRedaction so the bytes (and hash) are deterministic.
     const z1 = await syntheticDocx("Hello ABC world.");
-    const r1 = await finalizeRedaction(z1, { targets: ["ABC"] });
+    const r1 = await finalizeRedaction(z1, {
+      targets: buildResolvedTargetsFromStrings(["ABC"]),
+    });
     const z2 = await syntheticDocx("Hello ABC world.");
-    const r2 = await finalizeRedaction(z2, { targets: ["ABC"] });
+    const r2 = await finalizeRedaction(z2, {
+      targets: buildResolvedTargetsFromStrings(["ABC"]),
+    });
     expect(r1.sha256).toBe(r2.sha256);
   });
 
   it("exposes the word-count before/after numbers", async () => {
     const zip = await syntheticDocx("one two three ABC four five six");
-    const result = await finalizeRedaction(zip, { targets: ["ABC"] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings(["ABC"]),
+    });
     // Before: 7 words. After: 7 words (ABC → [REDACTED] — still 1 token).
     expect(result.wordCount.before).toBe(7);
     expect(result.wordCount.after).toBe(7);
@@ -72,7 +86,7 @@ describe("finalizeRedaction — leak path (verify fails)", () => {
     // case-sensitive so "abc" survives.
     const zip = await syntheticDocx("ABC and abc are the same word.");
     const result = await finalizeRedaction(zip, {
-      targets: ["ABC", "abc"],
+      targets: buildResolvedTargetsFromStrings(["ABC", "abc"]),
     });
     // Both targets redacted → verify is clean.
     expect(result.verify.isClean).toBe(true);
@@ -86,7 +100,9 @@ describe("finalizeRedaction — leak path (verify fails)", () => {
     // which we cover in the integration test against the worst-case
     // fixture.
     const zip = await syntheticDocx("hello world");
-    const result = await finalizeRedaction(zip, { targets: ["missing"] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings(["missing"]),
+    });
     expect(result.verify.isClean).toBe(true);
     expect(isShippable(result)).toBe(true);
   });
@@ -103,7 +119,9 @@ describe("finalizeRedaction — word count insanity", () => {
     // [REDACTED] — same token count, no drop. So we use a different setup:
     // Manually verify the word-count sanity math by passing a scenario
     // where the redactor legitimately strips text.
-    const result = await finalizeRedaction(zip, { targets: ["word"] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings(["word"]),
+    });
     // Token count is stable because [REDACTED] is 1 token per match.
     expect(result.wordCount.before).toBe(9);
     expect(result.wordCount.after).toBe(9);
@@ -115,7 +133,7 @@ describe("finalizeRedaction — word count insanity", () => {
     // With a threshold of 0%, ANY drop is unshippable. Since there is no
     // drop in this test, it's still shippable.
     const r1 = await finalizeRedaction(zip, {
-      targets: [],
+      targets: buildResolvedTargetsFromStrings([]),
       wordCountThresholdPct: 0,
     });
     expect(r1.wordCount.sane).toBe(true);
@@ -127,7 +145,7 @@ describe("finalizeRedaction — options", () => {
   it("respects a custom placeholder", async () => {
     const zip = await syntheticDocx("Hello ABC world.");
     const result = await finalizeRedaction(zip, {
-      targets: ["ABC"],
+      targets: buildResolvedTargetsFromStrings(["ABC"]),
       placeholder: "[HIDDEN]",
     });
     // Reload the output and check that the placeholder appeared
@@ -139,7 +157,7 @@ describe("finalizeRedaction — options", () => {
   it("respects a custom word-count threshold", async () => {
     const zip = await syntheticDocx("one two three");
     const result = await finalizeRedaction(zip, {
-      targets: [],
+      targets: buildResolvedTargetsFromStrings([]),
       wordCountThresholdPct: 50,
     });
     expect(result.wordCount.thresholdPct).toBe(50);
@@ -149,13 +167,17 @@ describe("finalizeRedaction — options", () => {
 describe("isShippable", () => {
   it("returns true when verify is clean AND word-count is sane", async () => {
     const zip = await syntheticDocx("hello world");
-    const result = await finalizeRedaction(zip, { targets: [] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings([]),
+    });
     expect(isShippable(result)).toBe(true);
   });
 
   it("returns false when verify is NOT clean (crafted report)", async () => {
     const zip = await syntheticDocx("hello world");
-    const result = await finalizeRedaction(zip, { targets: [] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings([]),
+    });
     // Craft a copy with a failed verify to exercise the branch
     const broken = {
       ...result,
@@ -164,6 +186,7 @@ describe("isShippable", () => {
         isClean: false,
         survived: [
           {
+            targetId: buildSelectionTargetId("auto", "hello"),
             text: "hello",
             scope: { kind: "body" as const, path: "word/document.xml" },
             count: 1,
@@ -176,7 +199,9 @@ describe("isShippable", () => {
 
   it("returns false when word-count is NOT sane (crafted report)", async () => {
     const zip = await syntheticDocx("hello world");
-    const result = await finalizeRedaction(zip, { targets: [] });
+    const result = await finalizeRedaction(zip, {
+      targets: buildResolvedTargetsFromStrings([]),
+    });
     const broken = {
       ...result,
       wordCount: {
