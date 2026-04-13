@@ -10,14 +10,16 @@ A step-by-step walkthrough for running `document-redactor` on a real file. If yo
 2. [Verifying your download](#2-verifying-your-download)
 3. [Opening the tool](#3-opening-the-tool)
 4. [Your first redaction](#4-your-first-redaction)
-5. [Understanding the three candidate groups](#5-understanding-the-three-candidate-groups)
-6. [The D9 defined-term policy](#6-the-d9-defined-term-policy)
-7. [Non-contract documents](#non-contract-documents)
-8. [Keyboard shortcuts](#7-keyboard-shortcuts)
-9. [Verifying your output](#8-verifying-your-output)
-10. [Troubleshooting](#9-troubleshooting)
-11. [What this tool doesn't do](#10-what-this-tool-doesnt-do)
-12. [Privacy statement](#11-privacy-statement)
+5. [The candidate panel — 8 category sections + catch-all](#5-the-candidate-panel--8-category-sections--catch-all)
+6. [The inline document preview](#6-the-inline-document-preview)
+7. [Defined term labels (the D9 policy)](#7-defined-term-labels-the-d9-policy)
+8. [The three verification outcomes](#8-the-three-verification-outcomes)
+9. [Non-contract documents](#9-non-contract-documents)
+10. [Keyboard shortcuts](#10-keyboard-shortcuts)
+11. [Verifying your output file](#11-verifying-your-output-file)
+12. [Troubleshooting](#12-troubleshooting)
+13. [What this tool does not do](#13-what-this-tool-does-not-do)
+14. [Privacy statement](#14-privacy-statement)
 
 ---
 
@@ -25,7 +27,7 @@ A step-by-step walkthrough for running `document-redactor` on a real file. If yo
 
 Go to the [latest release](https://github.com/lowtidebuild/document-redactor/releases/latest) and download **both** files:
 
-- **`document-redactor.html`** — the tool itself (one HTML file, ~180 KB)
+- **`document-redactor.html`** — the tool itself (~238 KB, single HTML file)
 - **`document-redactor.html.sha256`** — the integrity sidecar (89 bytes)
 
 If you received the files via Kakao, email, or USB from someone else, that's fine — the verification step in the next section is exactly designed for this case. You don't need to trust the sender; you need to verify the hash.
@@ -34,14 +36,14 @@ If you received the files via Kakao, email, or USB from someone else, that's fin
 
 ## 2. Verifying your download
 
-The sidecar file lets you prove that what you have is byte-identical to what was published. This matters because between the official release and your disk, a file can be modified by:
+The sidecar lets you prove your copy is byte-identical to what was published. Between the official release and your disk, a file can be modified by:
 
 - A compromised mirror
 - A corporate proxy or DLP system that transparently rewrites downloads
 - A malicious network intermediary
 - A well-meaning sender who accidentally re-exported or re-zipped the file
 
-All of these scenarios produce a different SHA-256 hash. The verification is a one-line command.
+All of these produce a different SHA-256 hash. Verification is a one-line command.
 
 ### macOS / Linux
 
@@ -66,27 +68,14 @@ shasum -a 256 -c document-redactor.html.sha256
 
 ```powershell
 cd C:\path\to\where\you\downloaded\both\files
-
-# Compute the hash of the downloaded HTML
 $actual = (Get-FileHash -Algorithm SHA256 document-redactor.html).Hash.ToLower()
-
-# Read the expected hash from the sidecar
 $expected = (Get-Content document-redactor.html.sha256).Split(' ')[0].ToLower()
-
 if ($actual -eq $expected) { "OK" } else { "MISMATCH — do not run" }
-```
-
-### Windows (WSL / Git Bash)
-
-Same as macOS / Linux:
-
-```bash
-sha256sum -c document-redactor.html.sha256
 ```
 
 ### If you see anything other than `OK`
 
-**Stop.** Do not open the HTML file. The file you have is not the file that was published. Possible next steps:
+**Stop.** Do not open the HTML file. Possible next steps:
 
 1. Re-download both files directly from the GitHub releases page (browser address bar, not a link someone sent you).
 2. Verify on a different network (your corporate proxy may be rewriting the file).
@@ -96,16 +85,16 @@ sha256sum -c document-redactor.html.sha256
 
 ## 3. Opening the tool
 
-Double-click `document-redactor.html`. Your default browser opens it as a `file://` URL. There is no installer, no permissions prompt, no network call, no toolbar extension.
+Double-click `document-redactor.html`. Your default browser opens it as a `file://` URL. There is no installer, no permissions prompt, no network call.
 
-The title bar (or tab title) should read `document-redactor · offline DOCX redactor`. The top-left brand area says `document-redactor`. The top-right badge says `0 network requests` — and means it.
+The tab title reads `document-redactor · offline DOCX redactor`. The top-right badge reads `0 network requests` — and means it.
 
 ### Which browsers work
 
 - Chrome, Chromium, Brave, Edge (v120+) — tested
 - Firefox (v120+) — tested
 - Safari (16+) — tested
-- Any modern browser with support for ES2022, Web Crypto SubtleCrypto, and `file://` origins
+- Any modern browser with ES2022, Web Crypto SubtleCrypto, and `file://` origin support
 
 ### Which browsers don't work
 
@@ -117,306 +106,404 @@ The title bar (or tab title) should read `document-redactor · offline DOCX reda
 
 ## 4. Your first redaction
 
-Let's walk through redacting a contract step by step.
-
 ### Step 4.1 — Drop your file
 
-You'll see a large dashed rectangle labeled "Drop a DOCX file here, or choose a file." Drag a `.docx` from your file explorer onto the rectangle, or click the "choose a file" link and pick one.
+Drag a `.docx` onto the drop zone, or click "choose a file" and pick one. The tool loads the file, unzips it in memory, and walks every text-bearing scope (body, headers, footers, footnotes, endnotes, comments). Typical contracts parse in under a second.
 
-The tool loads the file, unzips it in memory, walks every text-bearing scope (body, footnotes, endnotes, comments, headers, footers), and advances to the next phase. This takes under a second for typical contracts.
+> **Nothing leaves your machine.** The file lives only in a JavaScript variable inside your browser tab. There is no server to upload to, no disk cache, no telemetry.
 
-> **Nothing leaves your machine.** The file lives in a JavaScript variable inside your browser tab. Nothing is uploaded, cached to disk, or sent to a server — there is no server to send it to.
+### Step 4.2 — Read the inline document preview (center)
 
-### Step 4.2 — Fill in the seed editor (left sidebar)
+The center panel shows the **contract body rendered as text**, with every detected candidate wrapped in a yellow `<mark>` highlight. You can:
 
-The sidebar on the left shows a **Seed editor**. This is where you tell the tool which names and phrases you want to find and redact.
+- Scroll through the document and see candidates in context
+- Click any highlight to toggle its selection (checked ↔ unchecked)
+- Use keyboard Tab / Enter / Space to navigate and toggle
 
-By default, it contains a few example seeds (company names, person names). **Replace them with your actual targets.** One entry per line. Examples:
+Each scope appears under its own header: **본문** (body), **각주** (footnotes), **머리글 1** (header 1), **바닥글 1** (footer 1), etc. Empty paragraphs appear as visible blank lines so the document structure stays familiar.
 
-```
-ABC Corporation
-XYZ Holdings
-김철수
-Jane Smith
-010-1234-5678
-```
+### Step 4.3 — Review the candidate sections (right panel)
 
-The seed editor is for **custom entities** — things the tool cannot guess (company names, specific individuals, specific addresses). Known PII patterns (phones, emails, 주민번호, 사업자번호, etc.) are detected automatically by the PII regex sweep; you don't need to add them here.
+The right panel groups candidates into **8 category sections** plus a catch-all. Each section shows its count and the rule or source that produced each item. Click any row to toggle its selection — the corresponding document highlight updates immediately.
 
-### Step 4.3 — Review the candidate panel (right)
+Each row has a **↓ jump** button. Click it to scroll the document to the first occurrence of that candidate, with a brief pulse animation to draw your eye.
 
-After dropping the file, the right panel shows **three groups** of candidates:
-
-1. **Literal names** — Every variant of every seed you entered. If you typed `ABC Corporation`, you'll see rows for `ABC Corporation`, `ABC Corp`, `ABC`, and any other substring the tool extracted.
-2. **Defined term labels** — Role words and aliases the tool detected as contract definitions (`the Buyer`, `the Discloser`, `甲`, `매수인`, etc.). These are **unchecked by default** — see [§ 6 The D9 defined-term policy](#6-the-d9-defined-term-policy).
-3. **Auto-detected PII** — Every phone, email, 주민등록번호, 사업자등록번호, EIN, bank account, credit card number the regex sweep found.
-
-Each row has a checkbox. Everything in groups 1 and 3 is **checked by default**. Everything in group 2 is **unchecked by default**. You can toggle any checkbox freely.
+See [§ 5](#5-the-candidate-panel--8-category-sections--catch-all) for the full section breakdown.
 
 ### Step 4.4 — Press Apply
 
-When you're happy with the selections, click **Apply and verify** at the bottom of the panel (or press **⌘/Ctrl + Enter** from anywhere).
+When the selections look right, click **Apply and verify** at the bottom of the right panel (or press **⌘/Ctrl + Enter** from anywhere on the page).
 
-The tool:
+The tool runs the full pipeline:
 
-1. Rewrites the XML in place, replacing every selected candidate with `[REDACTED]`.
-2. Runs a verification pass — re-reads the output bytes and confirms zero occurrences of any selected target remain.
-3. Computes the SHA-256 hash of the output file.
-4. Checks the word count against the original (a ≥30% drop flags as suspicious).
-5. Shows a green banner: **"Verification passed"** with the SHA-256 (first 4 + last 4 hex chars) and the word count before/after.
+1. **Flatten track changes** — removes deleted-but-hidden text
+2. **Strip comments** — deletes `word/comments.xml` and markers
+3. **Flatten fields** — unwraps hyperlinks, removes `<w:fldChar>` / `<w:instrText>` (so `HYPERLINK "mailto:..."` instructions can't leak)
+4. **Redact** — replaces every selected string with `[REDACTED]` across all scopes
+5. **Scrub metadata** — clears author, lastModifiedBy, company, title in `docProps/*`
+6. **Round-trip verify** — re-parses the output and confirms zero surviving sensitive strings (including URLs in `word/_rels/*.rels`)
+7. **Word-count sanity** — compares before/after word counts; ≥30% drop triggers a warning
+
+One of three verification outcomes appears. See [§ 8](#8-the-three-verification-outcomes).
 
 ### Step 4.5 — Download
 
-Click **Download** on the green banner. The file saves as `{your original filename}.redacted.docx`. For example, `NDA_2026_final.docx` becomes `NDA_2026_final.redacted.docx`.
+On **downloadReady** (green) or **downloadWarning** (amber after explicit override), click **Download** to save `{original}.redacted.docx`. Example: `NDA_2026_final.docx` becomes `NDA_2026_final.redacted.docx`.
 
-This is the file you ship. You can open it in Word, Google Docs, or any other editor, and the redacted spans appear as `[REDACTED]` inline with the rest of the text.
+On **verifyFail** (red), download is blocked. See [§ 8.3](#83-verifyfail-red--blocked).
 
 ---
 
-## 5. Understanding the three candidate groups
+## 5. The candidate panel — 8 category sections + catch-all
 
-### Group 1 — Literal names (red pills)
+After parse, the right panel renders candidates grouped into these sections, in this order:
 
-Everything in this group comes from your seed editor entries and their **automatic variants**. If you entered `ABC Corporation`, the tool proposes:
+### 1. 당사자 (Parties)
 
-- `ABC Corporation` (the seed itself)
-- `ABC Corp` (corporate suffix swap)
-- `ABC` (bare root)
-- Any other substring pattern that matches corporate-naming conventions
+Entity literals from the structural parsers and propagation layer — `ABC Corporation`, `XYZ Holdings`, `김철수`, and any automatic variants. **Checked by default.**
 
-**These are checked by default** because they are the entities you explicitly asked to redact.
+### 2. 정의된 대리어 (Defined term labels)
 
-**Careful with bare roots.** If `ABC` is checked and your document also contains the word `abc` as part of another entity (like `abcdefg Co.`), the bare root will match it too. Deselect `ABC` if you want only the full-name form redacted.
+Generic role words from definition clauses: `the Buyer`, `the Discloser`, `매수인`, `갑`. **Unchecked by default** — see [§ 7](#7-defined-term-labels-the-d9-policy).
 
-### Group 2 — Defined term labels (slate pills)
+### 3. 식별번호 (PII)
 
-These are role words and definition aliases the tool detected by looking for patterns like:
-
-- `"Discloser" means ABC Corporation` → the label `Discloser` gets grouped here
-- `(hereinafter "the Buyer")` → `the Buyer`
-- 한국어: `("갑"이라 함은 ABC 법인을 말한다)` → `갑`
-- Japanese-style: `甲`, `乙`
-
-**These are unchecked by default** — because if you redact them, sentences like `The Buyer acknowledges that the Discloser may disclose…` become `The [REDACTED] acknowledges that the [REDACTED] may disclose…`, which loses readability and downstream AI tools cannot reason about party roles. See [§ 6](#6-the-d9-defined-term-policy) for when you should turn them on.
-
-### Group 3 — Auto-detected PII (amber pills)
-
-Every hit from the PII regex sweep:
+Identifiers the regex sweep detects deterministically:
 
 - 주민등록번호 (Korean RRN, format `XXXXXX-Xxxxxxx`)
-- 사업자등록번호 (Korean business registration, format `XXX-XX-XXXXX`)
-- EIN (US Employer Identification Number, format `XX-XXXXXXX`)
-- Phone numbers (Korean, international)
-- Email addresses
-- Bank account numbers (Korean)
-- Credit card numbers (Luhn-validated)
+- 사업자등록번호 (Korean BRN, format `XXX-XX-XXXXX`)
+- EIN (US, format `XX-XXXXXXX`)
+- Korean mobile phones (010/011/016-019)
+- **Korean landlines** (02-, 031-069, 070, 080, 060, 050)
+- International phones (with `+` prefix)
+- Email addresses (RFC-bounded)
+- Korean bank accounts
+- Credit cards (Luhn-validated)
 
-**These are checked by default.** Each row shows its detected kind (e.g., `주민등록번호`, `phone · KR`, `email`).
+**All checked by default.**
 
-**The PII regex sweep is deterministic.** No ML, no probabilistic scoring. If a string matches the pattern, it appears here. If it doesn't match, it doesn't. The patterns are strict — a random 13-digit number will not show up as "probably a 주민번호" unless it actually fits the format.
+### 4. 금액 (Financial)
+
+Currency values: `50,000원`, `1억`, `USD 100,000`, `₩50,000,000`, `€50,000`, percentages (`15%`), Korean fractions (`3분의 1`), and label-driven amount context (`금액: 5,000,000`). **Checked by default** for all confidence=1.0 regex matches.
+
+### 5. 날짜 / 기간 (Temporal)
+
+Korean dates (`2024년 3월 15일`, `2024.3.15`), ISO 8601 (`2024-03-15`, with optional time), English dates (`March 15, 2024`), Korean durations (`3년간`, `6개월`), English durations (`3 years`), and label-driven date context (`계약일: 2024.3.15`). **Checked by default.**
+
+### 6. 법인 / 인물 (Entities)
+
+Korean corporations (`주식회사 ABC`, `(주)ABC`, `㈜ABC`), other legal forms (`유한회사`, `사단법인`), executive titles with names (`대표이사 김철수`), honorifics (`김철수 님`), English corporations (`ABC Corp.`, `XYZ Inc.`), international legal forms (`ABC GmbH`, `XYZ S.A.`, `DEF Pty Ltd`), English titles (`Mr. Smith`, `Dr. Jones`, `CEO John Smith`), **label-driven address capture** (`주소: 서울특별시 강남구 논현로 568` / `Address: 12345 Main St, ...`), and **label-driven phone capture** (`전화: 02-3446-3727` / `Phone Number: +82-2-3446-3727`). **Checked by default.**
+
+### 7. 법원 / 사건 (Legal)
+
+Korean case numbers (`2024가합12345`), court names (`서울중앙지방법원`, `대법원`), statute references (`민법 제750조`, `제15조 제2항`), English case citations (`123 F.3d 456`), statute references (`17 U.S.C. § 101`), and legal context scanners. **Checked by default.**
+
+### 8. 추측 (Low-confidence heuristics)
+
+Heuristic detections with confidence below 1.0 — capitalization clusters (`Acme Holdings`), quoted terms (`"Project Alpha"`), repeated proper nouns, and email-domain-inferred company names. Rendered with a warm/amber background and dashed outline in the document preview. **Unchecked by default** — the user opts in after review.
+
+### Catch-all — 기타 (그 외)
+
+A catch-all section at the bottom with an always-visible input field. Use this for anything the rules missed: foreign addresses with unusual formats, internal project codewords, non-standard phone formats, or any free-form sensitive string.
+
+Typed entries:
+
+- appear with the checkbox already checked
+- are added as inline highlights in the document preview
+- persist across re-analysis (if you drop the same file again, they stay)
+- can be unchecked (kept in the manual list but skipped for this redaction)
+- can be removed entirely via the **×** button
 
 ---
 
-## 6. The D9 defined-term policy
+## 6. The inline document preview
+
+The center panel is the **primary review surface**. It renders the contract body as plain text (no bold/italic/tables — just readable paragraphs) with candidate highlights baked in.
+
+### Visual states
+
+- **Checked highlight**: solid warm yellow with an amber ring — this string will be redacted on Apply
+- **Unchecked highlight**: dashed border, transparent background — detected but skipped
+- **Pulse animation**: briefly drawn around the target when you click a row's **↓ jump** button
+
+### Interactions
+
+- **Click a highlight** → toggle its selection (same as toggling the row in the right panel)
+- **Tab** → move focus to the next highlight
+- **Enter / Space** on a focused highlight → toggle
+- **Scroll** normally through multi-scope documents (header → body → footer → footnotes)
+
+### Scope headers
+
+Each scope starts with a small uppercase label:
+
+- **본문** — `word/document.xml` (main body)
+- **각주** — `word/footnotes.xml`
+- **미주** — `word/endnotes.xml`
+- **머리글 1, 2, ...** — `word/header1.xml`, `header2.xml`, ...
+- **바닥글 1, 2, ...** — `word/footer1.xml`, ...
+
+If a scope is empty, it still appears with a `(비어 있음)` note so you know the tool checked it.
+
+### What the preview does NOT render
+
+- Bold / italic / underline (plain text only)
+- Tables as tables (cells flatten to paragraphs)
+- Images
+- Numbering / bullets (just the text content)
+- Headings distinctly (all appear as paragraphs)
+
+This is a review surface, not a Word clone. For layout-faithful review, open the output in Word afterward.
+
+---
+
+## 7. Defined term labels (the D9 policy)
 
 In a typical two-party contract, the definition section says something like:
 
 > This Agreement is made between ABC Corporation ("Discloser") and XYZ Holdings ("Recipient").
 
-After this sentence, the rest of the contract refers to the parties as "the Discloser" and "the Recipient" instead of their full names. If you redact both the full names AND the defined terms, every reference disappears:
+After this sentence, the contract refers to parties as "the Discloser" / "the Recipient" instead of full names. If you redact BOTH the full names AND the defined terms, every reference disappears:
 
 > `The [REDACTED] agrees that [REDACTED] may share information with [REDACTED] employees…`
 
-That's not useful. The whole point of redacting is to hand the file to a downstream reader (another lawyer, an AI tool, a non-NDA counterparty) who can still reason about the structure of the agreement. Keeping the role labels intact preserves readability:
+Not useful. The whole point of redacting is to hand the file to a downstream reader (another lawyer, an AI tool, a non-NDA counterparty) who can still reason about the agreement's structure. Keeping role labels intact preserves readability:
 
 > `The Discloser agrees that Recipient may share information with Recipient employees…`
 
-This is why defined terms are **unchecked by default**.
+This is why **정의된 대리어** (defined terms) is **unchecked by default**.
 
 ### When to turn defined terms ON
 
-You should check defined term boxes when:
+1. **Three or more parties share the same role.** If three companies are all "Licensees", leaving `Licensee` unredacted doesn't hide anything. But if two of them are `Licensee A` and `Licensee B`, redacting only the full names (while keeping `Licensee A` / `Licensee B` intact) might leak who-is-who by elimination.
+2. **Your output is going to an adversarial reader.** If the recipient might de-anonymize by cross-referencing external data, removing all labels is safer than preserving structure.
+3. **Public record sharing.** For court filings where party names must be obscured but document structure must remain intact, decide per-label.
 
-1. **Three or more parties share the same role.** If three companies are all "Licensees", leaving `Licensee` unredacted doesn't hide anything — the role word is generic. But if two of them are called `Licensee A` and `Licensee B`, then redacting only the full names (while keeping `Licensee A` / `Licensee B` intact) might leak who-is-who by elimination.
-2. **Your output is going to an adversarial reader.** If the recipient might try to de-anonymize by cross-referencing external data, removing all labels is safer than preserving structure.
-3. **You're sharing a public record.** For court filings where the party names must be obscured but the document structure must remain intact, leave defined terms on and let the reader rely on context.
+### When to keep them OFF (the default)
 
-### When to keep defined terms OFF (the default)
-
-For the common case — sending a contract to an in-house colleague, another attorney, or a legal AI tool for analysis — leaving defined terms unredacted is the right call. The downstream reader sees the contract structure clearly and can focus on the legal analysis instead of decoding `[REDACTED]`.
-
-### How to read the labels
-
-Each defined term row shows its **source attribution** underneath: `from definition · ABC Corporation`. This tells you which entity the label refers to, so you can make per-label decisions.
+For the common case — sending a contract to a colleague, another attorney, or a legal AI tool for analysis — leaving defined terms intact is the right call. The reader sees contract structure clearly and can focus on analysis instead of decoding `[REDACTED]`.
 
 ---
 
-## Non-contract documents
+## 8. The three verification outcomes
 
-The engine is text-based and works on any DOCX — it doesn't know or care whether the file is a contract, an opinion, a brief, a memo, or internal notes. For non-contract use:
+After Apply, one of three banners appears. Understanding the split is critical for deciding whether to download.
 
-- **Enter your targets in the seed editor.** The tool cannot guess what you want to redact in a judge's opinion (case numbers? party names? judge's name?). Type them in.
-- **Defined term detection will find nothing.** The D9 parser looks for `"X" means Y` and `("Y"이라 함은)` patterns, which are almost exclusive to contracts. On a non-contract document, the defined-term group will be empty — that's correct.
-- **PII regex sweep still works.** 주민번호, phones, emails, 사업자번호 — all detected regardless of document type.
-- **Stop-phrases are contract-flavored.** The internal stop-phrase list (noise words the keyword suggester skips) includes contract skeleton terms like "제1조", "본 계약", "갑", "을". These won't cause false positives — they're used to filter out the *suggestion* sidebar, not the detection. You can safely ignore this.
+### 8.1 `downloadReady` (green) — safe to ship
 
-**Practical example — redacting a judgment excerpt:**
+- `verify.isClean === true`: zero surviving sensitive strings in the output
+- `wordCount.sane === true`: the word count drop is within the 30% threshold
 
-1. Seed editor:
+The banner shows the SHA-256 of the output file (first 4 + last 4 hex chars) and a **Download** button. Click it to save `{original}.redacted.docx`.
+
+### 8.2 `downloadWarning` (amber) — override allowed
+
+- `verify.isClean === true`: zero surviving sensitive strings
+- `wordCount.sane === false`: the redaction removed more than 30% of the words
+
+**No leak was detected**, but a selection may have been too broad (for example, adding a common word like `는` to the catch-all section). You have three choices:
+
+1. **검토로 돌아가기** — return to review without losing selections. Trim the over-broad entries, then Apply again.
+2. **경고를 이해하고 다운로드** — override the warning and download anyway (when the broad removal was intentional).
+3. **Start over** — discard everything and reload from scratch.
+
+### 8.3 `verifyFail` (red) — blocked
+
+- `verify.isClean === false`: a sensitive string you selected still appears in the output
+
+The banner lists every survived string with:
+
+- the text
+- the count
+- the source file (`word/document.xml`, `word/_rels/document.xml.rels`, etc.)
+- a **이 항목 검토** button per row → jumps to the string in the inline preview
+
+**Download is blocked.** The usual recovery flow:
+
+1. Click the **첫 항목부터 검토** primary button (or the per-row **이 항목 검토**) to return to review with that string focused
+2. Inspect where it survives. Common reasons:
+   - The string appears in `word/_rels/document.xml.rels` as a hyperlink Target (use the catch-all to explicitly add the URL form)
+   - The string is in an unusual scope not covered by the selection
+   - A normalization quirk (zero-width spaces, hyphen variants)
+3. Add the exact bytes to **기타 (그 외)** if needed
+4. Apply again
+
+Rarer paths:
+
+- **검토로 돌아가기** — return to review without focusing a specific string
+- **Start over** — discard state and reload
+
+---
+
+## 9. Non-contract documents
+
+The engine is text-based and works on any DOCX — it doesn't care whether the file is a contract, an opinion, a brief, a memo, or internal notes. For non-contract use:
+
+- **The 8 category rules still fire automatically.** Addresses, phones, emails, IDs, amounts, dates, court names, statute references — all picked up regardless of document type.
+- **The 정의된 대리어 section will usually be empty** on non-contract docs. The D9 parser looks for `"X" means Y` / `("Y"이라 함은)` patterns, which are almost exclusive to contracts.
+- **Use the 기타 section heavily** for domain-specific terms. A judgment might want case numbers, judge names, or party names; a patent spec might want inventor names or assignee; a memo might want internal codewords.
+- **Redacted output opens in Word the same way** regardless of source type.
+
+Practical example — redacting a judgment excerpt:
+
+1. Drop the file
+2. Auto-detected candidates fill the category sections
+3. In **기타 (그 외)**, add:
    ```
    김철수
    박영희
    ABC 법인
    서울중앙지방법원 2024가합12345
    ```
-2. The PII sweep may find phone numbers, 주민번호, or 사업자번호 in the text of the judgment. Those show up in group 3.
-3. The defined-term group is empty (no `"X" means Y` in a judgment).
-4. Apply → verify → download.
+4. Apply → verify → download
 
 ---
 
-## 7. Keyboard shortcuts
+## 10. Keyboard shortcuts
 
-- **⌘ (Mac) / Ctrl (Windows, Linux) + Enter** — Fire "Apply and verify" when you're in the post-parse phase. Works from anywhere on the page, no focus management needed.
+| Key | Action |
+|---|---|
+| **⌘/Ctrl + Enter** | Apply and verify (from anywhere) |
+| **Tab** | Move focus through candidates (rows + document highlights) |
+| **Enter** / **Space** | Toggle selection on a focused row or highlight |
+| **Escape** | Cancel an open "+ 추가" input (in sections where it's collapsible) |
 
-That's the full shortcut list for v1. More may arrive in v1.x — follow the releases page.
+That's the full v1.1 shortcut list. More may arrive later — follow releases.
 
 ---
 
-## 8. Verifying your output
+## 11. Verifying your output file
 
-After a successful redaction, the green banner shows the SHA-256 of your output file (first 4 + last 4 hex). You can independently verify this hash in a terminal:
+After a successful redaction, the banner shows the SHA-256 of your output file (first 4 + last 4 hex). Verify independently in a terminal:
 
 ```bash
-sha256sum NDA_2026_final.redacted.docx
+shasum -a 256 NDA_2026_final.redacted.docx
 ```
 
 The first 4 + last 4 hex chars should match what the banner showed. If they don't, something is wrong — file a bug.
 
 ### Why hash the output?
 
-Because if you send the redacted file to someone else and want them to confirm they received the same file you sent, the hash is the contract. Same hash = byte-identical file. Different hash = something changed in transit (email re-encoding, zip re-compression, corporate DLP rewriting).
+If you send the redacted file to someone else and want them to confirm they received exactly what you sent, the hash is the contract. Same hash = byte-identical. Different hash = something changed in transit (email re-encoding, zip re-compression, corporate DLP rewriting).
 
 ### Is the hash deterministic across runs?
 
-**Yes, for the same input + same selections.** The tool pins every zip entry's internal timestamp to Unix epoch 0 before generating the output zip. This means:
-
-- Run the tool twice on the same input with the same toggle choices → byte-identical output → identical SHA-256.
-- Two different people running the tool on the same input with the same selections → identical SHA-256.
-
-This is what makes the Kakao-message distribution path work: you can say "here is the hash of the file I'm about to send you" and the recipient can verify that what they received is what you sent.
+**Yes, for the same input + same selections.** Every ZIP entry's internal timestamp is pinned to Unix epoch 0 before generating the output. Same input + same toggle choices → byte-identical output → identical SHA-256. Two people running the tool on the same input with the same selections produce identical hashes.
 
 ---
 
-## 9. Troubleshooting
+## 12. Troubleshooting
 
 ### "The file I dropped just shows a spinner forever"
 
-The parse phase is synchronous and fast (<1 second). If it appears stuck:
+Parse is synchronous and typically under a second. If it appears stuck:
 
-1. Open browser DevTools (F12) → Console tab. Look for errors.
-2. Check whether the file is actually a `.docx`. The tool rejects `.doc` (legacy binary format), `.pages`, and other non-OOXML files.
-3. Very large files (>10 MB) may take a few seconds — wait before declaring it stuck.
-4. If none of the above: file a bug with the error from the console and a fixture that reproduces the problem (a synthetic minimal DOCX, not your real file).
+1. Open browser DevTools (F12) → Console. Look for errors.
+2. Check the file is actually a `.docx`. The tool rejects `.doc` (legacy binary), `.pages`, etc.
+3. Very large files (>10 MB) may take a few seconds.
+4. If none of the above: file a bug with the console error and a minimal synthetic `.docx` that reproduces.
 
-### "A name I expected to see isn't in the candidate list"
+### "A name I expected isn't highlighted"
 
-First, check that you actually typed it in the seed editor. The tool finds only:
+The tool only highlights what the rules detect. If a company name is purely free-form and not caught:
 
-- Literal seeds you entered (and their automatic variants)
-- Defined term patterns (`"X" means Y` format)
-- PII patterns (regex — phones, emails, 주민번호, 사업자번호, etc.)
+1. Check whether it has a label in the document (`상호: ...`, `법인명: ...`). Label-driven rules should pick those up.
+2. If it's bare text without a label, use the **기타 (그 외)** section to add it manually. That's the catch-all's whole purpose.
 
-If you expected a specific company name to be found automatically, it won't be — there is no "proper noun detection" in v1 (that would require an ML model, which we don't have). Add it to the seed editor and re-drop the file.
+### "The tool flagged 주민번호 where there isn't one"
 
-### "The tool found 주민번호 where there isn't one"
+Unlikely — the regex is strict (6 digits + hyphen + 1-8 + 6 digits). Common explanations:
 
-Unlikely but possible — the regex is strict but not infallible. Check the position in the text. Common false positives:
+- A long ID like `2024041012345678` that happens to contain the pattern → regex anchors should reject this, but report as a bug if you see it
+- A date like `2024-01-15` formatted as `240115` → does NOT match the 주민번호 pattern
 
-- A long ID like `2024041012345678` that happens to have 13 digits — the regex is anchored to `[0-9]{6}-[1-4][0-9]{6}` with the hyphen and the 7th-digit constraint, so this should NOT match. Report it as a bug if it does.
-- A date like `2024-01-15` formatted as `240115` — does not match the 주민번호 pattern.
+If you see a false positive, uncheck the row before Apply.
 
-If you see a false positive that seems to actually fit the pattern, uncheck that row before applying.
+### "Verification failed even though I checked everything"
 
-### "The verification step failed"
+This is `verifyFail` — a sensitive string survived. The most common causes in v1.1:
 
-The banner turns red: **"Verification FAILED — N occurrences remain"**. This means after redacting, the verifier re-read the output and still found targets. This should never happen on well-formed DOCX and indicates a bug.
-
-Workaround: deselect the specific target that survived, re-run, and **file a bug** with:
-- The DOCX fixture that reproduces (or a minimal synthesized one)
-- The list of selected targets
-- The SHA-256 of the input file
+- **The string is in `word/_rels/document.xml.rels`** as a hyperlink Target. The banner shows the rels path. Unwrapping hyperlinks removes the display text, but the URL in the rels file stays. Add the URL (e.g., `contact@pearlabyss.com` or the full URL) to 기타 explicitly, then Apply again.
+- **Zero-width spaces or hyphen variants** in the source. The normalization layer handles most, but some exotic combinations can slip through. Add the exact visible text to 기타.
+- **Unusual scope** not covered by selections (e.g., the string only appears in a comment that survived; this should be rare since comments are stripped entirely).
 
 ### "The tool is slow"
 
-Parse takes ~200ms. Detection takes ~300ms for a typical contract. Apply takes ~500ms plus write-back. Total: under 2 seconds end to end.
+Typical timings on a 50 KB contract:
 
-If it's genuinely slow (>10 seconds), the most likely cause is a very large DOCX with many thousands of paragraphs. Open DevTools Performance tab to profile. File a bug with the fixture size.
+- Parse: ~200 ms
+- Detection: ~300 ms
+- Apply + verify: ~500 ms
+- Document preview render: <500 ms
+
+Total under 2 seconds end to end. If it's genuinely slow (>10 seconds), the most likely cause is a very large DOCX with thousands of paragraphs. Open DevTools Performance tab to profile. File a bug with the fixture size.
 
 ### "I dropped a 50 MB file and my browser hung"
 
-The tool has no explicit size cap in v1, but browsers start to choke on multi-hundred-MB files held entirely in memory. Typical legal documents are <5 MB. If your file is unusually large (scanned PDF converted to DOCX with embedded images, for example), the OCR / image caveat from [§ 10](#10-what-this-tool-doesnt-do) applies — the tool can't redact text inside images regardless, so there's no benefit to running it on an image-heavy file.
+The tool has no explicit size cap in v1.x, but browsers choke on multi-hundred-MB files. Typical legal documents are <5 MB. For unusually large files (scanned pages converted to DOCX with embedded images), the OCR caveat from [§ 13](#13-what-this-tool-does-not-do) applies — the tool cannot redact text inside images regardless, so there's little benefit to running it on an image-heavy file.
 
-### "The mobile version looks weird"
+### "The mobile layout looks cramped"
 
-Below 720 px, the 3-column layout degrades to 2-column. Below 400 px, things start to overlap. The tool is intended for desktop use in v1. Mobile polish is not on the v1.x roadmap.
+The tool is intended for desktop use (≥1024 px wide). Below that, the 3-column layout degrades. Mobile polish is not on the v1.x roadmap.
 
-### "I want to undo a redaction"
+### "I want to undo a redaction after downloading"
 
-You can't — the output file has `[REDACTED]` baked in. But you can:
+You can't — the output file has `[REDACTED]` baked in. But you can re-run:
 
-1. Go back to the drop zone
-2. Drop the ORIGINAL file again (the tool keeps no state between parses)
-3. Deselect the targets you now want to keep
-4. Apply again
+1. Click **검토로 돌아가기** (or **Start over** if you want a fresh reload)
+2. Adjust selections
+3. Apply again
 
-The tool never modifies the original input file on disk; it only reads it.
+The tool never modifies the original input on disk; it only reads it.
 
----
+### "My download looks like an old version"
 
-## 10. What this tool doesn't do
+If the HTML tool itself (`document-redactor.html`) appears outdated:
 
-These are v1 limitations. Most are planned for v1.x.
+- Browser cache: **Cmd+Shift+R** (hard refresh) or open in an incognito window
+- Downloaded-once sitting in `~/Downloads`: delete it and re-download from GitHub Releases
+- The GitHub release isn't up to date yet — check the release date on the latest tag
 
-- **No OCR.** If your DOCX has images of text (scanned pages, screenshots of other documents), the text inside those images is invisible to the tool. You must redact them in an image editor before importing to Word, or use a separate OCR pipeline.
-
-- **No handwritten signature images.** Same as OCR — they're pixels, not text.
-
-- **No SmartArt or WordArt text.** These are special OOXML constructs. Text inside them is not walked by the scope walker in v1. If you use these features, verify manually after export.
-
-- **No embedded Excel / PowerPoint objects.** OLE-embedded objects are treated as opaque blobs. Native DOCX tables (regular Word tables) are **fully handled**.
-
-- **No form fields or content controls.** Microsoft Word supports structured document tags (`<w:sdt>`) for form fields. v1 treats these as text runs for text purposes but does not understand the field semantics.
-
-- **No macros or VBA.** `.docm` files (macro-enabled Word) are not supported in v1. Convert to `.docx` first.
-
-- **No click-to-select in the preview pane.** The preview shows the loaded file name and a placeholder; candidate review happens entirely in the right panel.
-
-- **No undo / redo inside the tool.** Each "Apply" is one-shot. To change your mind, go back to the drop zone and re-drop the original file.
-
-- **No persistent state between sessions.** The tool remembers nothing. Close the tab, reopen it, and you start fresh.
-
-- **No batch processing.** One file at a time. For bulk redaction, run the tool once per file.
-
-- **No policy files / team sharing.** Every user maintains their own seed list. No import/export of seeds in v1.
+If the redacted `.docx` output looks odd, it's a different issue — attach an input fixture to a bug report.
 
 ---
 
-## 11. Privacy statement
+## 13. What this tool does not do
+
+These are v1.1 limitations. Some are planned for future paranoid-tier work; others are intentional.
+
+- **No OCR.** If your DOCX has images of text (scanned pages, screenshots), the text inside is invisible. Redact images in an editor before converting, or OCR separately.
+- **No handwritten signature images.** Same as OCR — pixels, not text.
+- **No SmartArt or WordArt text.** These are special OOXML constructs the scope walker skips.
+- **No embedded Excel / PowerPoint objects.** OLE-embedded objects are treated as opaque blobs. Regular Word tables ARE fully handled.
+- **No full `<w:sdt>` content control handling.** Text inside structured document tags is walked as text but the form semantics are not preserved.
+- **No macros or VBA.** `.docm` files are not supported. Convert to `.docx` first.
+- **No undo / redo.** Each Apply is one-shot; use **검토로 돌아가기** before Apply or re-drop the file.
+- **No persistent state between sessions.** Close the tab, reopen, start fresh. (Manual additions persist ONLY within the same session.)
+- **No batch processing.** One file at a time.
+- **No policy files / team sharing.** No import/export of selection sets across users.
+- **No `word/_rels/*.rels` Target rewriting.** Phase 4 verifier DETECTS surviving URLs in rels files and blocks download, but does not actively overwrite them. The user resolves it via the catch-all or by cleaning the source document.
+- **No image EXIF scrubbing.** Images inside the DOCX keep their original metadata (GPS, camera info).
+- **No revision-ID scrubbing.** `w:rsidR` identifiers stay. Usually harmless, but in theory allow author correlation across documents.
+- **No hidden text (`<w:vanish>`) surfacing.** Hidden text is a separate leak vector; Paranoid-tier work will address it.
+
+---
+
+## 14. Privacy statement
 
 **We collect nothing because there is no "we".**
 
-`document-redactor` is an HTML file. It runs inside your browser tab, on your computer, from your disk. It has no backend. There is no database to which your data could be written. There is no analytics endpoint. There is no error reporting service. There is no "usage telemetry." There is no feature flag service. The tool cannot contact the outside world because:
+`document-redactor` is an HTML file. It runs inside your browser tab, on your computer, from your disk. It has no backend. There is no database, analytics endpoint, error reporting service, or telemetry. The tool cannot contact the outside world because:
 
-1. The source code has no `fetch`, `XMLHttpRequest`, `WebSocket`, or any other network API call.
-2. The built HTML has been scanned at build time to confirm zero such tokens in the bundle.
-3. The runtime Content-Security-Policy blocks any such call even if one existed.
-4. You can verify all three above yourself before running it.
+1. The source has zero `fetch`, `XMLHttpRequest`, `WebSocket`, or any network API call
+2. The built HTML is scanned at build time to confirm zero such tokens in the bundle
+3. The runtime Content-Security-Policy (`default-src 'none'; connect-src 'none'`) blocks any such call even if one existed
+4. You can verify all three above yourself before running it
 
-When you redact a file with this tool, the file you dropped, the seed list you typed, the selection states you toggled, and the output file you downloaded — all of it exists only in your browser tab's memory and on your disk. When you close the tab, all of it is gone.
+When you redact a file: the dropped bytes, the selections you toggle, the manual entries you type, and the output you download — all of it exists only in your browser tab's memory and on your disk. Close the tab, all of it is gone.
 
-If you find any behavior that contradicts this statement, it is a bug, and it would be the single most important bug in the project. Please file an issue immediately.
+If you observe any behavior that contradicts this statement, it is a bug, and it would be the single most important bug in the project. Please file an issue immediately.
 
 ---
 
-_That's the full v1 guide. For the design rationale and trust architecture, see the [README](README.md). For bug reports and feature requests, use [GitHub Issues](https://github.com/lowtidebuild/document-redactor/issues)._
+_That's the full v1.1 guide. For architecture rationale, see the [README](README.md). For detection rule internals, see [docs/RULES_GUIDE.md](docs/RULES_GUIDE.md). Bug reports and feature requests: [GitHub Issues](https://github.com/lowtidebuild/document-redactor/issues)._

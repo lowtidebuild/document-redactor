@@ -1,97 +1,83 @@
-<svg width="1400" height="760" viewBox="0 0 1400 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="document-redactor — 오프라인 로컬 DOCX 비식별화">
   <defs>
-    <linearGradient id="bg" x1="80" y1="40" x2="1320" y2="720" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0B1220"/>
-      <stop offset="0.55" stop-color="#11243F"/>
-      <stop offset="1" stop-color="#1E3A5F"/>
+    <linearGradient id="bgk" x1="0" y1="0" x2="1200" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#111B2E"/>
     </linearGradient>
-    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1130 180) rotate(130) scale(420 340)">
-      <stop stop-color="#60A5FA" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#60A5FA" stop-opacity="0"/>
+    <radialGradient id="glowk" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(980 120) rotate(120) scale(320 240)">
+      <stop stop-color="#3B82F6" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#3B82F6" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(280 610) rotate(8) scale(520 260)">
-      <stop stop-color="#34D399" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#34D399" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="card" x1="850" y1="120" x2="1220" y2="620" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#13253F"/>
-      <stop offset="1" stop-color="#0D1728"/>
+    <linearGradient id="paperk" x1="820" y1="120" x2="1100" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#E2E8F0"/>
     </linearGradient>
   </defs>
 
-  <rect x="24" y="24" width="1352" height="712" rx="34" fill="url(#bg)"/>
-  <rect x="24" y="24" width="1352" height="712" rx="34" stroke="#334155" stroke-width="2"/>
-  <rect x="24" y="24" width="1352" height="712" rx="34" fill="url(#glowA)"/>
-  <rect x="24" y="24" width="1352" height="712" rx="34" fill="url(#glowB)"/>
+  <rect width="1200" height="420" rx="20" fill="url(#bgk)"/>
+  <rect width="1200" height="420" rx="20" fill="url(#glowk)"/>
 
-  <g opacity="0.18">
-    <path d="M82 132H776" stroke="#93C5FD" stroke-width="1"/>
-    <path d="M82 188H776" stroke="#93C5FD" stroke-width="1"/>
-    <path d="M82 244H776" stroke="#93C5FD" stroke-width="1"/>
-    <path d="M82 300H776" stroke="#93C5FD" stroke-width="1"/>
-    <path d="M82 356H776" stroke="#93C5FD" stroke-width="1"/>
-    <path d="M82 412H776" stroke="#93C5FD" stroke-width="1"/>
-    <path d="M82 468H776" stroke="#93C5FD" stroke-width="1"/>
+  <g transform="translate(72 72)">
+    <circle cx="6" cy="6" r="4" fill="#34D399"/>
+    <text x="22" y="11" fill="#CBD5E1" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="13" letter-spacing="2.2" font-weight="600">OFFLINE  ·  SINGLE HTML  ·  ZERO NETWORK</text>
   </g>
 
-  <rect x="84" y="76" width="274" height="40" rx="20" fill="#0F1B2D" stroke="#334155"/>
-  <text x="107" y="102" fill="#BFDBFE" font-size="18" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif" letter-spacing="1.1">오프라인  •  단일 HTML  •  DOCX</text>
+  <text x="72" y="172" fill="#F8FAFC" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="64" font-weight="700" letter-spacing="-1.5">document-redactor</text>
 
-  <text x="84" y="186" fill="white" font-size="74" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">document-redactor</text>
-  <text x="84" y="246" fill="#BFDBFE" font-size="30" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">AI에 넣기 전, 법률 문서를 로컬에서 먼저 정리하는 도구</text>
+  <text x="72" y="218" fill="#94A3B8" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="20" font-weight="400">AI 에 올리기 전에 먼저 돌려서</text>
+  <text x="72" y="246" fill="#94A3B8" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="20" font-weight="400">계약서·법률 문서를 로컬에서 비식별화하는 도구.</text>
 
-  <text x="84" y="322" fill="#E2E8F0" font-size="24" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">HTML 파일 하나로 열고, 감지 결과를 검토하고, 검증된 출력만 다운로드합니다.</text>
-  <text x="84" y="360" fill="#E2E8F0" font-size="24" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">설치 없음. 계정 없음. 서버 왕복 없음. 숨겨진 모델 경로 없음.</text>
+  <g transform="translate(72 296)">
+    <rect width="132" height="52" rx="10" fill="#0F1B2D" stroke="#1E3A5F"/>
+    <text x="16" y="26" fill="#60A5FA" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="11" font-weight="600" letter-spacing="1">ARTIFACT</text>
+    <text x="16" y="44" fill="#F8FAFC" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="15" font-weight="700">HTML 한 파일</text>
 
-  <g>
-    <rect x="84" y="442" width="168" height="54" rx="14" fill="#F8FAFC"/>
-    <text x="114" y="474" fill="#0F172A" font-size="22" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">파일 1개</text>
-    <text x="114" y="495" fill="#475569" font-size="14" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">document-redactor.html</text>
+    <g transform="translate(144 0)">
+      <rect width="110" height="52" rx="10" fill="#0F1B2D" stroke="#1E3A5F"/>
+      <text x="16" y="26" fill="#60A5FA" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="11" font-weight="600" letter-spacing="1">SIZE</text>
+      <text x="16" y="44" fill="#F8FAFC" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="15" font-weight="700">238 KB</text>
+    </g>
 
-    <rect x="270" y="442" width="150" height="54" rx="14" fill="#0B5F48"/>
-    <text x="300" y="474" fill="white" font-size="22" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">248 KB</text>
-    <text x="300" y="495" fill="#BBF7D0" font-size="14" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">현재 빌드</text>
+    <g transform="translate(266 0)">
+      <rect width="140" height="52" rx="10" fill="#052E27" stroke="#0F766E"/>
+      <text x="16" y="26" fill="#6EE7B7" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="11" font-weight="600" letter-spacing="1">NETWORK</text>
+      <text x="16" y="44" fill="#ECFDF5" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="15" font-weight="700">0 요청</text>
+    </g>
 
-    <rect x="438" y="442" width="192" height="54" rx="14" fill="#0F1B2D" stroke="#334155"/>
-    <text x="468" y="474" fill="white" font-size="22" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">0 requests</text>
-    <text x="468" y="495" fill="#94A3B8" font-size="14" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">런타임 네트워크 호출</text>
+    <g transform="translate(418 0)">
+      <rect width="150" height="52" rx="10" fill="#0F1B2D" stroke="#1E3A5F"/>
+      <text x="16" y="26" fill="#60A5FA" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="11" font-weight="600" letter-spacing="1">COVERAGE</text>
+      <text x="16" y="44" fill="#F8FAFC" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-size="15" font-weight="700">1,712 테스트</text>
+    </g>
   </g>
 
-  <g>
-    <rect x="848" y="112" width="446" height="520" rx="28" fill="url(#card)" stroke="#3B82F6" stroke-opacity="0.28" stroke-width="2"/>
-    <rect x="884" y="152" width="374" height="76" rx="18" fill="#0F1B2D" stroke="#334155"/>
-    <text x="914" y="182" fill="#93C5FD" font-size="16" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">workflow</text>
-    <text x="914" y="209" fill="white" font-size="28" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">검토. 검증. 안전한 export.</text>
+  <g transform="translate(790 76)">
+    <rect x="24" y="14" width="310" height="278" rx="12" fill="#1E293B" opacity="0.45"/>
+    <rect width="320" height="288" rx="12" fill="url(#paperk)" stroke="#CBD5E1"/>
 
-    <rect x="884" y="254" width="172" height="102" rx="20" fill="#0F766E"/>
-    <text x="910" y="293" fill="white" font-size="19" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">규칙 기반</text>
-    <text x="910" y="322" fill="#CCFBF1" font-size="15" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">결정론적 감지</text>
-    <text x="910" y="344" fill="#CCFBF1" font-size="15" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">추적 가능한 동작</text>
+    <rect x="28" y="36" width="180" height="10" rx="2" fill="#94A3B8"/>
+    <rect x="28" y="58" width="240" height="6" rx="2" fill="#CBD5E1"/>
+    <rect x="28" y="72" width="220" height="6" rx="2" fill="#CBD5E1"/>
+    <rect x="28" y="86" width="200" height="6" rx="2" fill="#CBD5E1"/>
 
-    <rect x="1086" y="254" width="172" height="102" rx="20" fill="#1D4ED8"/>
-    <text x="1112" y="293" fill="white" font-size="19" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">Round-trip</text>
-    <text x="1112" y="322" fill="#DBEAFE" font-size="15" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">출력 재파싱</text>
-    <text x="1112" y="344" fill="#DBEAFE" font-size="15" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">누출 시 차단</text>
+    <rect x="28" y="110" width="120" height="14" rx="2" fill="#0F172A"/>
+    <rect x="156" y="112" width="120" height="6" rx="2" fill="#CBD5E1"/>
+    <rect x="156" y="120" width="70" height="6" rx="2" fill="#CBD5E1"/>
 
-    <rect x="884" y="384" width="374" height="186" rx="24" fill="#0B1220" stroke="#334155"/>
-    <text x="914" y="424" fill="#E2E8F0" font-size="17" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">왜 중요한가</text>
-    <text x="914" y="464" fill="white" font-size="22" font-weight="700" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">AI 도구 전에 먼저 돌리는 도구</text>
-    <text x="914" y="500" fill="#CBD5E1" font-size="18" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">로컬에서 정리하고</text>
-    <text x="914" y="530" fill="#CBD5E1" font-size="18" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">문맥 안에서 검토하고</text>
-    <text x="914" y="560" fill="#CBD5E1" font-size="18" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">검증 후에만 내보냅니다</text>
-  </g>
+    <rect x="28" y="138" width="240" height="6" rx="2" fill="#CBD5E1"/>
+    <rect x="28" y="152" width="220" height="6" rx="2" fill="#CBD5E1"/>
 
-  <g>
-    <rect x="84" y="616" width="176" height="38" rx="19" fill="#0F1B2D" stroke="#334155"/>
-    <text x="112" y="640" fill="#E2E8F0" font-size="16" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">SHA-256 sidecar</text>
+    <rect x="28" y="172" width="86" height="14" rx="2" fill="#0F172A"/>
+    <rect x="122" y="174" width="140" height="6" rx="2" fill="#CBD5E1"/>
+    <rect x="28" y="196" width="200" height="6" rx="2" fill="#CBD5E1"/>
 
-    <rect x="274" y="616" width="150" height="38" rx="19" fill="#0F1B2D" stroke="#334155"/>
-    <text x="302" y="640" fill="#E2E8F0" font-size="16" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">Svelte 5 UI</text>
+    <rect x="28" y="216" width="180" height="14" rx="2" fill="#0F172A"/>
+    <rect x="28" y="240" width="220" height="6" rx="2" fill="#CBD5E1"/>
+    <rect x="28" y="254" width="160" height="6" rx="2" fill="#CBD5E1"/>
 
-    <rect x="438" y="616" width="202" height="38" rx="19" fill="#0F1B2D" stroke="#334155"/>
-    <text x="466" y="640" fill="#E2E8F0" font-size="16" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">JSZip + raw OOXML</text>
-
-    <rect x="654" y="616" width="168" height="38" rx="19" fill="#0F1B2D" stroke="#334155"/>
-    <text x="682" y="640" fill="#E2E8F0" font-size="16" font-family="Pretendard, Noto Sans KR, Apple SD Gothic Neo, Segoe UI, Arial, sans-serif">1,700+ tests</text>
+    <g transform="translate(240 242)">
+      <circle cx="28" cy="28" r="28" fill="#16A34A"/>
+      <path d="M16 28l8 8 16-16" stroke="#F0FDF4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
   </g>
 </svg>

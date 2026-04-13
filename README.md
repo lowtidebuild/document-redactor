@@ -4,18 +4,48 @@
   <img src="docs/assets/readme-hero.svg" alt="document-redactor hero banner" width="100%" />
 </p>
 
+<h2 align="center">⬇️ Download the tool</h2>
+
+<table align="center">
+  <tr>
+    <td align="center" valign="middle">
+      <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html">
+        <img alt="Download document-redactor.html" src="https://img.shields.io/badge/document--redactor.html-Download%20(latest)-0f766e?style=for-the-badge&logo=html5&logoColor=white" />
+      </a>
+      <br />
+      <sub>Single HTML · ~238 KB · open locally</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html.sha256">
+        <img alt="Download SHA-256 sidecar" src="https://img.shields.io/badge/SHA--256%20sidecar-Download-64748b?style=for-the-badge&logo=keybase&logoColor=white" />
+      </a>
+      <br />
+      <sub>Integrity check · 89 bytes</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="https://github.com/lowtidebuild/document-redactor/releases/latest">
+        <img alt="View all releases" src="https://img.shields.io/badge/All%20releases-%E2%86%92-334155?style=for-the-badge&logo=github&logoColor=white" />
+      </a>
+      <br />
+      <sub>Release notes, older builds</sub>
+    </td>
+  </tr>
+</table>
+
 <p align="center">
-  <a href="https://github.com/lowtidebuild/document-redactor/releases/latest">
-    <img alt="Download latest release" src="https://img.shields.io/badge/Download-latest%20release-0f766e?style=for-the-badge" />
-  </a>
+  <strong>Double-click the downloaded HTML</strong> to open in your browser.<br />
+  <em>Verify with</em> <code>shasum -a 256 -c document-redactor.html.sha256</code> <em>first.</em>
+</p>
+
+<p align="center">
   <a href="README.ko.md">
-    <img alt="Open Korean README" src="https://img.shields.io/badge/README-%ED%95%9C%EA%B5%AD%EC%96%B4-1d4ed8?style=for-the-badge" />
+    <img alt="Open Korean README" src="https://img.shields.io/badge/README-%ED%95%9C%EA%B5%AD%EC%96%B4-1d4ed8?style=flat-square" />
   </a>
   <a href="USAGE.md">
-    <img alt="Open usage guide" src="https://img.shields.io/badge/Guide-usage-7c3aed?style=for-the-badge" />
+    <img alt="Open usage guide" src="https://img.shields.io/badge/Guide-usage-7c3aed?style=flat-square" />
   </a>
   <a href="docs/RULES_GUIDE.md">
-    <img alt="Open rules guide" src="https://img.shields.io/badge/Rules-detection%20catalog-c2410c?style=for-the-badge" />
+    <img alt="Open rules guide" src="https://img.shields.io/badge/Rules-detection%20catalog-c2410c?style=flat-square" />
   </a>
 </p>
 
@@ -23,7 +53,7 @@
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lowtidebuild/document-redactor/ci.yml?branch=main&label=CI&style=flat-square" />
   <img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-0f172a?style=flat-square" />
   <img alt="single HTML distribution" src="https://img.shields.io/badge/distribution-single%20HTML-0f172a?style=flat-square" />
-  <img alt="248 KB artifact" src="https://img.shields.io/badge/current%20build-248%20KB-166534?style=flat-square" />
+  <img alt="238 KB artifact" src="https://img.shields.io/badge/current%20build-238%20KB-166534?style=flat-square" />
   <img alt="zero network requests" src="https://img.shields.io/badge/network-0%20requests-166534?style=flat-square" />
   <img alt="rule-based engine" src="https://img.shields.io/badge/detection-rule--based-1d4ed8?style=flat-square" />
   <img alt="AI none" src="https://img.shields.io/badge/AI-none-7f1d1d?style=flat-square" />
@@ -88,14 +118,25 @@ Manual redaction inside Word is slow, repetitive, and easy to get wrong.
 ## The Workflow
 
 ```mermaid
-flowchart LR
-    A[Open document-redactor.html] --> B[Drop .docx]
-    B --> C[Parse DOCX ZIP and XML locally]
-    C --> D[Detect candidates with rules]
-    D --> E[Review by section and inline preview]
-    E --> F[Apply redaction]
-    F --> G[Round-trip verify output]
-    G --> H[Download .redacted.docx and SHA-256 sidecar]
+flowchart TD
+    A["📄 <b>Open</b><br/>document-redactor.html"] --> B["📥 <b>Drop</b><br/>your .docx file"]
+    B --> C["⚙️ <b>Parse</b><br/>ZIP + XML<br/>locally in-browser"]
+    C --> D["🔍 <b>Detect</b><br/>candidates via<br/>deterministic rules"]
+    D --> E["👀 <b>Review</b><br/>by section +<br/>inline preview"]
+    E --> F["✂️ <b>Apply</b> redaction<br/>+ scrub metadata<br/>+ strip fields"]
+    F --> G{"✅ <b>Verify</b><br/>round-trip scan<br/>+ rels check"}
+    G -->|clean| H["💾 <b>Download</b><br/>.redacted.docx<br/>+ SHA-256 sidecar"]
+    G -->|leak detected| I["🔴 Block download<br/>+ jump to<br/>survived item"]
+
+    classDef default fill:#0f172a,stroke:#1e3a5f,stroke-width:2px,color:#f8fafc;
+    classDef action fill:#0f766e,stroke:#14b8a6,color:#ffffff;
+    classDef verify fill:#1d4ed8,stroke:#60a5fa,color:#ffffff;
+    classDef success fill:#166534,stroke:#22c55e,color:#ffffff;
+    classDef fail fill:#991b1b,stroke:#ef4444,color:#ffffff;
+    class F action;
+    class G verify;
+    class H success;
+    class I fail;
 ```
 
 ## Release Snapshot
@@ -108,7 +149,7 @@ flowchart LR
     </td>
     <td width="20%" valign="top">
       <strong>Current checked size</strong><br />
-      248 KB
+      238 KB
     </td>
     <td width="20%" valign="top">
       <strong>Integrity sidecar</strong><br />
@@ -120,14 +161,14 @@ flowchart LR
     </td>
     <td width="20%" valign="top">
       <strong>Automated coverage</strong><br />
-      1,700+ tests
+      1,712 tests
     </td>
   </tr>
 </table>
 
 Current checked release artifact on April 13, 2026:
 
-- `document-redactor.html` SHA-256: `65b580104ec2507a08538a9d0e1c06fcd29cdeffc35d809f2f93b3e6912c60be`
+- `document-redactor.html` SHA-256: `5b04c8a8514ea6e045cbc0a7cf9e4db9507cb508f996f88713d4fdb1a6eac866`
 - Verified locally with `shasum -a 256 -c document-redactor.html.sha256`
 
 ## What The Current Release Does
@@ -294,7 +335,7 @@ open dist/document-redactor.html
 Notes:
 
 - For browser QA, test the built `dist/document-redactor.html`, not the dev server.
-- The repository currently carries 1,700+ automated tests across detection, DOCX rewriting, verification, UI state, and ship gates.
+- The repository currently carries 1,712 automated tests across detection, DOCX rewriting, verification, UI state, and ship gates.
 - `dist/` is ignored in git; releases should publish the built HTML and its `.sha256` sidecar from CI or from a verified local build.
 
 ## License

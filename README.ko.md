@@ -4,18 +4,48 @@
   <img src="docs/assets/readme-hero-ko.svg" alt="document-redactor 한글 배너" width="100%" />
 </p>
 
+<h2 align="center">⬇️ 도구 다운로드</h2>
+
+<table align="center">
+  <tr>
+    <td align="center" valign="middle">
+      <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html">
+        <img alt="document-redactor.html 다운로드" src="https://img.shields.io/badge/document--redactor.html-%EC%B5%9C%EC%8B%A0%20%EB%B0%9B%EA%B8%B0-0f766e?style=for-the-badge&logo=html5&logoColor=white" />
+      </a>
+      <br />
+      <sub>HTML 한 파일 · ~238 KB · 더블클릭으로 실행</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html.sha256">
+        <img alt="SHA-256 sidecar 다운로드" src="https://img.shields.io/badge/SHA--256%20sidecar-%EB%B0%9B%EA%B8%B0-64748b?style=for-the-badge&logo=keybase&logoColor=white" />
+      </a>
+      <br />
+      <sub>무결성 확인용 · 89 bytes</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="https://github.com/lowtidebuild/document-redactor/releases/latest">
+        <img alt="릴리즈 전체 보기" src="https://img.shields.io/badge/%EB%AA%A8%EB%93%A0%20%EB%A6%B4%EB%A6%AC%EC%A6%88-%E2%86%92-334155?style=for-the-badge&logo=github&logoColor=white" />
+      </a>
+      <br />
+      <sub>릴리즈 노트·과거 버전</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <strong>받은 HTML 을 더블클릭</strong> 하면 브라우저에서 바로 열립니다.<br />
+  <em>열기 전에</em> <code>shasum -a 256 -c document-redactor.html.sha256</code> <em>로 무결성 확인</em>
+</p>
+
 <p align="center">
   <a href="README.md">
-    <img alt="Open English README" src="https://img.shields.io/badge/README-English-1d4ed8?style=for-the-badge" />
-  </a>
-  <a href="https://github.com/lowtidebuild/document-redactor/releases/latest">
-    <img alt="최신 릴리즈 다운로드" src="https://img.shields.io/badge/Download-latest%20release-0f766e?style=for-the-badge" />
+    <img alt="Open English README" src="https://img.shields.io/badge/README-English-1d4ed8?style=flat-square" />
   </a>
   <a href="USAGE.ko.md">
-    <img alt="사용 가이드 열기" src="https://img.shields.io/badge/Guide-%EC%82%AC%EC%9A%A9%20%EA%B0%80%EC%9D%B4%EB%93%9C-7c3aed?style=for-the-badge" />
+    <img alt="사용 가이드 열기" src="https://img.shields.io/badge/Guide-%EC%82%AC%EC%9A%A9%20%EA%B0%80%EC%9D%B4%EB%93%9C-7c3aed?style=flat-square" />
   </a>
   <a href="docs/RULES_GUIDE.md">
-    <img alt="룰 카탈로그 열기" src="https://img.shields.io/badge/Rules-detection%20catalog-c2410c?style=for-the-badge" />
+    <img alt="룰 카탈로그 열기" src="https://img.shields.io/badge/Rules-detection%20catalog-c2410c?style=flat-square" />
   </a>
 </p>
 
@@ -23,7 +53,7 @@
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lowtidebuild/document-redactor/ci.yml?branch=main&label=CI&style=flat-square" />
   <img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-0f172a?style=flat-square" />
   <img alt="single HTML distribution" src="https://img.shields.io/badge/distribution-single%20HTML-0f172a?style=flat-square" />
-  <img alt="248 KB artifact" src="https://img.shields.io/badge/current%20build-248%20KB-166534?style=flat-square" />
+  <img alt="238 KB artifact" src="https://img.shields.io/badge/current%20build-238%20KB-166534?style=flat-square" />
   <img alt="zero network requests" src="https://img.shields.io/badge/network-0%20requests-166534?style=flat-square" />
   <img alt="rule-based engine" src="https://img.shields.io/badge/detection-rule--based-1d4ed8?style=flat-square" />
   <img alt="AI none" src="https://img.shields.io/badge/AI-none-7f1d1d?style=flat-square" />
@@ -87,14 +117,25 @@ Word에서 수동으로 찾아 바꾸는 방식은 느리고, 반복적이고, �
 ## 작동 흐름
 
 ```mermaid
-flowchart LR
-    A[document-redactor.html 열기] --> B[.docx 드롭]
-    B --> C[DOCX ZIP과 XML을 로컬에서 파싱]
-    C --> D[규칙 기반 후보 감지]
-    D --> E[섹션별 목록과 인라인 프리뷰 검토]
-    E --> F[redaction 적용]
-    F --> G[출력물 round-trip 검증]
-    G --> H[.redacted.docx 와 SHA-256 sidecar 다운로드]
+flowchart TD
+    A["📄 <b>열기</b><br/>document-redactor.html"] --> B["📥 <b>드롭</b><br/>.docx 파일"]
+    B --> C["⚙️ <b>파싱</b><br/>ZIP + XML<br/>브라우저 로컬에서"]
+    C --> D["🔍 <b>감지</b><br/>결정론적 규칙<br/>기반 후보 추출"]
+    D --> E["👀 <b>검토</b><br/>카테고리 섹션 +<br/>인라인 프리뷰"]
+    E --> F["✂️ <b>적용</b><br/>메타데이터·필드·<br/>하이퍼링크 제거"]
+    F --> G{"✅ <b>검증</b><br/>round-trip 스캔<br/>+ rels 체크"}
+    G -->|깨끗| H["💾 <b>다운로드</b><br/>.redacted.docx<br/>+ SHA-256 sidecar"]
+    G -->|누출 감지| I["🔴 다운로드 차단<br/>+ 생존 항목으로<br/>이동"]
+
+    classDef default fill:#0f172a,stroke:#1e3a5f,stroke-width:2px,color:#f8fafc;
+    classDef action fill:#0f766e,stroke:#14b8a6,color:#ffffff;
+    classDef verify fill:#1d4ed8,stroke:#60a5fa,color:#ffffff;
+    classDef success fill:#166534,stroke:#22c55e,color:#ffffff;
+    classDef fail fill:#991b1b,stroke:#ef4444,color:#ffffff;
+    class F action;
+    class G verify;
+    class H success;
+    class I fail;
 ```
 
 ## 현재 릴리즈 스냅샷
@@ -107,7 +148,7 @@ flowchart LR
     </td>
     <td width="20%" valign="top">
       <strong>현재 확인된 크기</strong><br />
-      248 KB
+      238 KB
     </td>
     <td width="20%" valign="top">
       <strong>무결성 sidecar</strong><br />
@@ -119,14 +160,14 @@ flowchart LR
     </td>
     <td width="20%" valign="top">
       <strong>자동화 테스트</strong><br />
-      1,700+ tests
+      1,712 tests
     </td>
   </tr>
 </table>
 
 2026년 4월 13일 기준으로 확인한 현재 빌드:
 
-- `document-redactor.html` SHA-256: `65b580104ec2507a08538a9d0e1c06fcd29cdeffc35d809f2f93b3e6912c60be`
+- `document-redactor.html` SHA-256: `5b04c8a8514ea6e045cbc0a7cf9e4db9507cb508f996f88713d4fdb1a6eac866`
 - `shasum -a 256 -c document-redactor.html.sha256` 로 로컬 검증 완료
 
 ## 현재 릴리즈가 실제로 하는 일
@@ -295,7 +336,7 @@ open dist/document-redactor.html
 참고:
 
 - 브라우저 QA는 dev server가 아니라 빌드된 `dist/document-redactor.html` 기준으로 보는 게 맞습니다.
-- 저장소에는 detection, DOCX rewrite, verification, UI state, ship gate를 포괄하는 1,700개 이상의 자동화 테스트가 있습니다.
+- 저장소에는 detection, DOCX rewrite, verification, UI state, ship gate를 포괄하는 1,712개의 자동화 테스트가 있습니다.
 - `dist/` 는 git에 올리지 않으므로, 릴리즈는 CI나 검증된 로컬 빌드에서 HTML과 `.sha256` 을 게시해야 합니다.
 
 ## 라이선스
