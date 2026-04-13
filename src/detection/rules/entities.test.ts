@@ -24,8 +24,8 @@ function expectFast(subcategory: string, input: string, budgetMs = 50): void {
 }
 
 describe("ENTITIES registry", () => {
-  it("exports exactly 12 rules", () => {
-    expect(ENTITIES).toHaveLength(12);
+  it("exports exactly 16 rules", () => {
+    expect(ENTITIES).toHaveLength(16);
   });
 
   it("every rule id starts with 'entities.'", () => {
@@ -323,5 +323,193 @@ describe("entities.en-identity-context", () => {
 
   it("is ReDoS-safe on long English identity-context input", () => {
     expectFast("en-identity-context", "Name: " + "Alpha ".repeat(3000));
+  });
+});
+
+describe("entities.ko-address-context", () => {
+  it.each([
+    [
+      "matches 주소 labels",
+      "주소: 서울특별시 강남구 논현로 568 15층",
+      ["서울특별시 강남구 논현로 568 15층"],
+    ],
+    [
+      "matches 소재지 labels",
+      "소재지: 경기도 성남시 분당구 판교로 235",
+      ["경기도 성남시 분당구 판교로 235"],
+    ],
+    [
+      "matches 본점 주소 with spaced colon",
+      "본점 주소 : 서울시 중구 을지로 100",
+      ["서울시 중구 을지로 100"],
+    ],
+    [
+      "matches 사업장 주소 labels",
+      "사업장 주소: 부산광역시 해운대구 APEC로 55",
+      ["부산광역시 해운대구 APEC로 55"],
+    ],
+    [
+      "matches 연락지 labels and keeps commas inside the address",
+      "연락지: 서울시 서초구 반포대로 108, 101호",
+      ["서울시 서초구 반포대로 108, 101호"],
+    ],
+    [
+      "matches fullwidth colons",
+      "주민등록지：서울특별시 서초구 반포대로 108",
+      ["서울특별시 서초구 반포대로 108"],
+    ],
+    [
+      "matches at the start of the string",
+      "주소: 서울특별시 강남구 논현로 568\n다음줄",
+      ["서울특별시 강남구 논현로 568"],
+    ],
+    [
+      "matches at the end of the string",
+      "소재지: 경기도 성남시 분당구 판교로 235",
+      ["경기도 성남시 분당구 판교로 235"],
+    ],
+    [
+      "stops at semicolon terminators",
+      "주소: 서울시 강남구 테헤란로 12; 비고",
+      ["서울시 강남구 테헤란로 12"],
+    ],
+    ["rejects bare labels", "주소", []],
+    ["rejects too-short values", "주소: 서", []],
+    ["rejects labels outside the approved list", "거래처: 서울특별시 강남구 논현로 568", []],
+  ])("%s", (_name, text, expected) => {
+    expect(matchOne("ko-address-context", text)).toEqual(expected);
+  });
+
+  it("is ReDoS-safe on long Korean address-context input", () => {
+    expectFast("ko-address-context", "주소: " + "가".repeat(10000));
+  });
+});
+
+describe("entities.en-address-context", () => {
+  it.each([
+    [
+      "matches Address labels",
+      "Address: 12345 Main St, Anytown, CA 12345",
+      ["12345 Main St, Anytown, CA 12345"],
+    ],
+    [
+      "matches Mailing Address labels",
+      "Mailing Address: P.O. Box 1234, New York, NY 10001",
+      ["P.O. Box 1234, New York, NY 10001"],
+    ],
+    [
+      "matches Registered Address labels",
+      "Registered Address: 100 Wall Street, 5th Floor",
+      ["100 Wall Street, 5th Floor"],
+    ],
+    [
+      "matches Street Address labels",
+      "Street Address: 456 Oak Avenue, Apt 3B",
+      ["456 Oak Avenue, Apt 3B"],
+    ],
+    [
+      "matches Business Address labels",
+      "Business Address: 100 Market Street, Suite 400",
+      ["100 Market Street, Suite 400"],
+    ],
+    [
+      "matches Residence labels",
+      "Residence: 456 Oak Avenue, Apt 3B",
+      ["456 Oak Avenue, Apt 3B"],
+    ],
+    [
+      "prefers Mailing Address over Address when both labels could fit",
+      "Mailing Address: 456 Oak Ave",
+      ["456 Oak Ave"],
+    ],
+    [
+      "stops at semicolon terminators",
+      "Domicile: 500 Elm Street; Notes follow",
+      ["500 Elm Street"],
+    ],
+    [
+      "matches at the end of the string",
+      "Location: 12 Bridge Road",
+      ["12 Bridge Road"],
+    ],
+    ["rejects lowercase labels", "address: foo", []],
+    ["rejects bare labels", "Address:", []],
+    ["rejects too-short values", "Address: 1234", []],
+  ])("%s", (_name, text, expected) => {
+    expect(matchOne("en-address-context", text)).toEqual(expected);
+  });
+
+  it("is ReDoS-safe on long English address-context input", () => {
+    expectFast("en-address-context", "Address: " + "A".repeat(10000));
+  });
+});
+
+describe("entities.ko-phone-context", () => {
+  it.each([
+    ["matches 전화 labels", "전화: 02-3446-3727", ["02-3446-3727"]],
+    ["matches 전화번호 labels", "전화번호: 010-1234-5678", ["010-1234-5678"]],
+    ["matches 연락처 labels", "연락처: +82-2-3446-3727", ["+82-2-3446-3727"]],
+    ["matches 팩스 labels", "팩스: (02) 3446-3728", ["(02) 3446-3728"]],
+    ["matches Tel labels", "Tel: 02.3446.3727", ["02.3446.3727"]],
+    ["matches 휴대폰 labels", "휴대폰: 010 1234 5678", ["010 1234 5678"]],
+    [
+      "prefers 전화번호 over 전화 when both labels could fit",
+      "전화번호: 010-1234-5678",
+      ["010-1234-5678"],
+    ],
+    [
+      "prefers 팩스번호 over 팩스 when both labels could fit",
+      "팩스번호: 02-3446-3728",
+      ["02-3446-3728"],
+    ],
+    [
+      "matches at the start of the string",
+      "전화: 02-3446-3727\n다음줄",
+      ["02-3446-3727"],
+    ],
+    ["rejects bare labels", "전화", []],
+    ["rejects non-digit values", "전화: abc", []],
+    ["rejects too-short values", "전화: 123456", []],
+  ])("%s", (_name, text, expected) => {
+    expect(matchOne("ko-phone-context", text)).toEqual(expected);
+  });
+
+  it("is ReDoS-safe on long Korean phone-context input", () => {
+    expectFast("ko-phone-context", "전화: " + "0-".repeat(5000));
+  });
+});
+
+describe("entities.en-phone-context", () => {
+  it.each([
+    ["matches Phone Number labels", "Phone Number: 02-3446-3727", ["02-3446-3727"]],
+    ["matches Phone labels", "Phone: +1 (555) 123-4567", ["+1 (555) 123-4567"]],
+    ["matches Mobile labels", "Mobile: 010-1234-5678", ["010-1234-5678"]],
+    ["matches Fax labels", "Fax: 02 345 6789", ["02 345 6789"]],
+    ["matches Tel labels", "Tel: +82.2.3446.3727", ["+82.2.3446.3727"]],
+    ["matches Telephone labels", "Telephone: 02-3446-3727", ["02-3446-3727"]],
+    [
+      "prefers Phone Number over Phone when both labels could fit",
+      "Phone Number: 02-3446-3727",
+      ["02-3446-3727"],
+    ],
+    [
+      "matches at the start of the string",
+      "Phone Number: 02-3446-3727\nNext line",
+      ["02-3446-3727"],
+    ],
+    [
+      "matches at the end of the string",
+      "Cell: 010-1234-5678",
+      ["010-1234-5678"],
+    ],
+    ["rejects lowercase labels", "phone: foo", []],
+    ["rejects bare labels", "Phone Number:", []],
+    ["rejects too-short values", "Phone: 123456", []],
+  ])("%s", (_name, text, expected) => {
+    expect(matchOne("en-phone-context", text)).toEqual(expected);
+  });
+
+  it("is ReDoS-safe on long English phone-context input", () => {
+    expectFast("en-phone-context", "Phone: " + "1-".repeat(5000));
   });
 });

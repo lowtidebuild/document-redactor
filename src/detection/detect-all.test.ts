@@ -188,6 +188,11 @@ describe("detectAll", () => {
         ruleId: "identifiers.phone-kr",
         confidence: 1.0,
       },
+      {
+        text: "\uFF10\uFF11\uFF10-\uFF11\uFF12\uFF13\uFF14-\uFF15\uFF16\uFF17\uFF18",
+        ruleId: "entities.en-phone-context",
+        confidence: 1.0,
+      },
     ]);
   });
 

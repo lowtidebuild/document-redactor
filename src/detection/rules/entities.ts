@@ -166,4 +166,48 @@ export const ENTITIES = [
     description:
       "English identity value (1-4 capitalized words) preceded by a label (Name:/Company:/Representative:/...)",
   },
+  {
+    id: "entities.ko-address-context",
+    category: "entities",
+    subcategory: "ko-address-context",
+    pattern:
+      /(?<=(?:주소|소재지|거주지|본점\s*주소|본사\s*주소|지점\s*주소|사업장\s*주소|연락지|주민등록지|등록기준지)\s*[:：]?\s*)[^\s:：].{4,99}?(?=$|\n|;)/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean address value following a label (주소/소재지/거주지/본점 주소/...)",
+  },
+  {
+    id: "entities.en-address-context",
+    category: "entities",
+    subcategory: "en-address-context",
+    pattern:
+      /(?:(?<=Registered Address: )|(?<=Registered Address:)|(?<=Mailing Address: )|(?<=Mailing Address:)|(?<=Street Address: )|(?<=Street Address:)|(?<=Business Address: )|(?<=Business Address:)|(?<=Residence: )|(?<=Residence:)|(?<=Domicile: )|(?<=Domicile:)|(?<=Location: )|(?<=Location:)|(?<=Address: )|(?<=Address:))[0-9A-Z][^\n;]{4,99}?(?=$|\n|;)/g,
+    levels: ["standard", "paranoid"],
+    languages: ["en"],
+    description:
+      "English address value following a label (Address/Mailing Address/Residence/...)",
+  },
+  {
+    id: "entities.ko-phone-context",
+    category: "entities",
+    subcategory: "ko-phone-context",
+    pattern:
+      /(?<=(?:전화번호|전화|연락처|휴대전화|휴대폰|핸드폰|팩스번호|팩스|Fax|Tel)\s*[:：]?\s*)[+\d(][+\d .()\-]{6,24}(?=$|\n|;|[^\d+ .()\-])/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Phone number value following a Korean label (전화/전화번호/연락처/휴대폰/팩스/...)",
+  },
+  {
+    id: "entities.en-phone-context",
+    category: "entities",
+    subcategory: "en-phone-context",
+    pattern:
+      /(?<=(?:Phone Number|Telephone|Phone|Mobile|Cell|Tel|Fax) *: *)[+\d(][+\d .()\-]{6,24}(?=$|\n|;|[^\d+ .()\-])/g,
+    levels: ["standard", "paranoid"],
+    languages: ["en"],
+    description:
+      "Phone number value following an English label (Phone/Phone Number/Mobile/Cell/Tel/Fax)",
+  },
 ] as const satisfies readonly RegexRule[];
