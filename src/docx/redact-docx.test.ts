@@ -30,6 +30,7 @@ const FIXTURE = path.join(
   REPO_ROOT,
   "tests/fixtures/bilingual_nda_worst_case.docx",
 );
+const W_NS = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`;
 
 // Same redaction list the spike used. The orchestrator should produce the
 // same end state.
@@ -60,6 +61,34 @@ const MUST_SURVIVE: readonly string[] = [
   "📼",
   "대한민국",
 ] as const;
+
+async function syntheticDocx(parts: Record<string, string>): Promise<JSZip> {
+  const zip = new JSZip();
+  for (const [path, content] of Object.entries(parts)) {
+    zip.file(path, content);
+  }
+  return zip;
+}
+
+function bodyXml(inner: string): string {
+  return `<w:document ${W_NS}><w:body>${inner}</w:body></w:document>`;
+}
+
+function paragraphXml(inner: string): string {
+  return `<w:p>${inner}</w:p>`;
+}
+
+function runXml(text: string): string {
+  return `<w:r><w:t>${text}</w:t></w:r>`;
+}
+
+function instrRunXml(text: string): string {
+  return `<w:r><w:instrText xml:space="preserve">${text}</w:instrText></w:r>`;
+}
+
+function fldCharRun(kind: "begin" | "separate" | "end"): string {
+  return `<w:r><w:fldChar w:fldCharType="${kind}"/></w:r>`;
+}
 
 describe("redactDocx — integration against the worst-case bilingual fixture", () => {
   let outZip: JSZip;
@@ -213,5 +242,61 @@ describe("redactDocx — integration against the worst-case bilingual fixture", 
     const v = await verifyRedaction(partialZip, ["ABC Corporation"]);
     expect(v.isClean).toBe(false);
     expect(v.survived[0]!.text).toBe("ABC Corporation");
+  });
+});
+
+describe("redactDocx — Phase 4 field/hyperlink integration", () => {
+  it("removes complex-field instrText leaks from document.xml during the pipeline", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyXml(
+        paragraphXml(
+          `${runXml("담당자: ")}${fldCharRun("begin")}${instrRunXml(' HYPERLINK "mailto:contact@pearlabyss.com" ')}${fldCharRun("separate")}${runXml("contact@pearlabyss.com")}${fldCharRun("end")}`,
+        ),
+      ),
+    });
+
+    await redactDocx(zip, { targets: ["contact@pearlabyss.com"] });
+
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain("[REDACTED]");
+    expect(xml).not.toContain("<w:instrText");
+    expect(xml).not.toContain("contact@pearlabyss.com");
+  });
+
+  it("removes simple-field instruction attributes from document.xml during the pipeline", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyXml(
+        paragraphXml(
+          `<w:fldSimple w:instr=" HYPERLINK &quot;mailto:contact@pearlabyss.com&quot; ">${runXml("contact@pearlabyss.com")}</w:fldSimple>`,
+        ),
+      ),
+    });
+
+    await redactDocx(zip, { targets: ["contact@pearlabyss.com"] });
+
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain("[REDACTED]");
+    expect(xml).not.toContain("<w:fldSimple");
+    expect(xml).not.toContain('mailto:contact@pearlabyss.com');
+  });
+
+  it("unwraps hyperlink display runs while leaving the orphaned rels entry untouched for later verification", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyXml(
+        paragraphXml(
+          `<w:hyperlink r:id="rId5">${runXml("contact@pearlabyss.com")}</w:hyperlink>`,
+        ),
+      ),
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:contact@pearlabyss.com" TargetMode="External"/></Relationships>`,
+    });
+
+    await redactDocx(zip, { targets: ["contact@pearlabyss.com"] });
+
+    const xml = await zip.file("word/document.xml")!.async("string");
+    const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
+
+    expect(xml).toContain("[REDACTED]");
+    expect(xml).not.toContain("<w:hyperlink");
+    expect(rels).toContain("mailto:contact@pearlabyss.com");
   });
 });

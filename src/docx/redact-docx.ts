@@ -30,6 +30,7 @@
 
 import type JSZip from "jszip";
 
+import { flattenFieldsInZip } from "./flatten-fields.js";
 import { flattenTrackChanges } from "./flatten-track-changes.js";
 import { redactScopeXml, DEFAULT_PLACEHOLDER } from "./redact.js";
 import { listScopes, readScopeXml } from "./scopes.js";
@@ -90,33 +91,42 @@ export async function redactDocx(
   const targets = options.targets;
 
   // Step 1–2: walk text-bearing scopes (excluding the comments file itself,
-  // which we delete entirely in step 3) and apply per-scope mutations.
+  // which we delete entirely later) and flatten track changes + comment refs.
   const textScopes = listScopes(zip).filter((s) => s.kind !== "comments");
+  const bytesBefore = new Map<string, number>();
   const scopeMutations: ScopeMutationReport[] = [];
 
   for (const scope of textScopes) {
     let xml = await readScopeXml(zip, scope);
-    const before = xml.length;
+    bytesBefore.set(scope.path, xml.length);
 
     xml = flattenTrackChanges(xml);
     xml = stripCommentReferences(xml);
-    xml = redactScopeXml(xml, targets, placeholder);
-
     zip.file(scope.path, xml);
-    scopeMutations.push({
-      scope,
-      bytesBefore: before,
-      bytesAfter: xml.length,
-    });
   }
 
   // Step 3: delete comments.xml + companion parts entirely.
   dropCommentsPart(zip);
 
-  // Step 4: scrub document metadata (author, lastModifiedBy, title, ...).
+  // Step 3.5: flatten field machinery and hyperlink wrappers before redaction.
+  await flattenFieldsInZip(zip);
+
+  // Step 4: redact each text-bearing scope after the XML has been flattened.
+  for (const scope of textScopes) {
+    const xml = await readScopeXml(zip, scope);
+    const redacted = redactScopeXml(xml, targets, placeholder);
+    zip.file(scope.path, redacted);
+    scopeMutations.push({
+      scope,
+      bytesBefore: bytesBefore.get(scope.path) ?? xml.length,
+      bytesAfter: redacted.length,
+    });
+  }
+
+  // Step 5: scrub document metadata (author, lastModifiedBy, title, ...).
   await scrubDocxMetadata(zip);
 
-  // Step 5: round-trip verify against the same target list. If any sensitive
+  // Step 6: round-trip verify against the same target list. If any sensitive
   // string survived, the verifier flags it; the caller blocks the download.
   const verify = await verifyRedaction(zip, targets);
 
