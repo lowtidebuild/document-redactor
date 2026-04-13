@@ -36,9 +36,16 @@ function matches(subcategory: string, sample: string): string[] {
   return out;
 }
 
+function expectFast(subcategory: string, input: string, budgetMs = 50): void {
+  const start = performance.now();
+  void matches(subcategory, input);
+  const elapsed = performance.now() - start;
+  expect(elapsed).toBeLessThan(budgetMs);
+}
+
 describe("IDENTIFIERS registry", () => {
-  it("exports exactly 8 rules", () => {
-    expect(IDENTIFIERS.length).toBe(8);
+  it("exports exactly 9 rules", () => {
+    expect(IDENTIFIERS.length).toBe(9);
   });
 
   it("every rule has category = 'identifiers'", () => {
@@ -76,16 +83,20 @@ describe("IDENTIFIERS registry", () => {
     }
   });
 
-  it("every rule pattern.source matches the legacy PII_PATTERNS entry", () => {
+  it("every legacy-mapped rule pattern.source matches the legacy PII_PATTERNS entry", () => {
     for (const r of IDENTIFIERS) {
-      const kind = SUBCATEGORY_TO_KIND[r.subcategory]!;
+      const kind =
+        SUBCATEGORY_TO_KIND[r.subcategory as keyof typeof SUBCATEGORY_TO_KIND];
+      if (kind === undefined) continue;
       expect(r.pattern.source).toBe(PII_PATTERNS[kind].source);
     }
   });
 
-  it("every rule pattern.flags matches the legacy PII_PATTERNS entry", () => {
+  it("every legacy-mapped rule pattern.flags matches the legacy PII_PATTERNS entry", () => {
     for (const r of IDENTIFIERS) {
-      const kind = SUBCATEGORY_TO_KIND[r.subcategory]!;
+      const kind =
+        SUBCATEGORY_TO_KIND[r.subcategory as keyof typeof SUBCATEGORY_TO_KIND];
+      if (kind === undefined) continue;
       expect(r.pattern.flags).toBe(PII_PATTERNS[kind].flags);
     }
   });
@@ -174,6 +185,29 @@ describe("phone-intl", () => {
 
   it("does not match a bare + character", () => {
     expect(matches("phone-intl", "version+1 is fine")).toEqual([]);
+  });
+});
+
+describe("phone-kr-landline", () => {
+  it.each([
+    ["matches Seoul 02 with 4-digit subscriber", "02-1234-5678", ["02-1234-5678"]],
+    ["matches region 031 with 3-digit prefix", "031-123-4567", ["031-123-4567"]],
+    ["matches 070 VoIP", "070-1234-5678", ["070-1234-5678"]],
+    ["matches without hyphens", "0234463727", ["0234463727"]],
+    ["matches 080 toll-free", "080-123-4567", ["080-123-4567"]],
+    ["matches 050 alternate", "050-1234-5678", ["050-1234-5678"]],
+    ["matches at the start of the string", "02-1234-5678 is the Seoul office", ["02-1234-5678"]],
+    ["matches at the end of the string", "Call 02-1234-5678", ["02-1234-5678"]],
+    ["matches after a colon", "Tel: 02-1234-5678", ["02-1234-5678"]],
+    ["rejects mobile numbers handled by phone-kr", "010-1234-5678", []],
+    ["rejects too-short numbers", "02-123", []],
+    ["rejects invalid area codes", "099-1234-5678", []],
+  ])("%s", (_name, text, expected) => {
+    expect(matches("phone-kr-landline", text)).toEqual(expected);
+  });
+
+  it("is ReDoS-safe on 10KB adversarial input", () => {
+    expectFast("phone-kr-landline", "0-".repeat(5000));
   });
 });
 

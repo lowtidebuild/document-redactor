@@ -90,4 +90,14 @@ export const IDENTIFIERS = [
     languages: ["universal"],
     description: "Credit card, 16 digits in 4 groups, Luhn-validated",
   },
+  {
+    id: "identifiers.phone-kr-landline",
+    category: "identifiers",
+    subcategory: "phone-kr-landline",
+    pattern: /(?<!\d)(?:02|0[3-6]\d|070|060|050|080)-?\d{3,4}-?\d{4}(?!\d)/g,
+    levels: ["standard", "paranoid"],
+    languages: ["ko"],
+    description:
+      "Korean landline + VoIP + toll-free + premium phone numbers (02/031-069/070/060/050/080)",
+  },
 ] as const satisfies readonly RegexRule[];
