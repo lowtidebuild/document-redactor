@@ -13,7 +13,7 @@
         <img alt="Download document-redactor.html" src="https://img.shields.io/badge/document--redactor.html-Download%20(latest)-0f766e?style=for-the-badge&logo=html5&logoColor=white" />
       </a>
       <br />
-      <sub>Single HTML · ~247 KB · open locally</sub>
+      <sub>Single HTML · ~277 KB · open locally</sub>
     </td>
     <td align="center" valign="middle">
       <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html.sha256">
@@ -53,7 +53,7 @@
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lowtidebuild/document-redactor/ci.yml?branch=main&label=CI&style=flat-square" />
   <img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-0f172a?style=flat-square" />
   <img alt="single HTML distribution" src="https://img.shields.io/badge/distribution-single%20HTML-0f172a?style=flat-square" />
-  <img alt="247 KB artifact" src="https://img.shields.io/badge/current%20build-247%20KB-166534?style=flat-square" />
+  <img alt="277 KB artifact" src="https://img.shields.io/badge/current%20build-277%20KB-166534?style=flat-square" />
   <img alt="zero network requests" src="https://img.shields.io/badge/network-0%20requests-166534?style=flat-square" />
   <img alt="rule-based engine" src="https://img.shields.io/badge/detection-rule--based-1d4ed8?style=flat-square" />
   <img alt="AI none" src="https://img.shields.io/badge/AI-none-7f1d1d?style=flat-square" />
@@ -149,7 +149,7 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>Current checked size</strong><br />
-      247 KB
+      277 KB
     </td>
     <td width="20%" valign="top">
       <strong>Integrity sidecar</strong><br />
@@ -161,14 +161,14 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>Automated coverage</strong><br />
-      1,722 tests
+      1,739 tests
     </td>
   </tr>
 </table>
 
 Current checked release artifact on April 14, 2026:
 
-- `document-redactor.html` SHA-256: `b065ab14511138c6610be5a03d0ef829c8e41ce04ee4e4f63e28e4e7213150f5`
+- `document-redactor.html` SHA-256: `323221def9ce105afbd8ea805a5ed7e0751152ec2d531d6dba84111332cd32f9`
 - Verified locally with `shasum -a 256 -c document-redactor.html.sha256`
 
 ## What The Current Release Does
