@@ -18,6 +18,7 @@ import type {
   Heuristic,
   HeuristicContext,
 } from "../../_framework/types.js";
+import { recoverOriginalSlice } from "../../_framework/recover-bytes.js";
 import { ROLE_BLACKLIST_EN } from "../role-blacklist-en.js";
 import { ROLE_BLACKLIST_KO } from "../role-blacklist-ko.js";
 
@@ -43,8 +44,19 @@ export const QUOTED_TERM: Heuristic = {
       if (priorTexts.has(inner)) continue;
       if (ROLE_BLACKLIST_EN.has(inner.toLowerCase())) continue;
       if (ROLE_BLACKLIST_KO.has(inner)) continue;
+      const innerStartNorm = m.index + 1;
+      const innerEndNorm = innerStartNorm + inner.length;
+      const original =
+        ctx.originalText && ctx.map
+          ? recoverOriginalSlice(
+              ctx.originalText,
+              ctx.map,
+              innerStartNorm,
+              innerEndNorm,
+            )
+          : inner;
       out.push({
-        text: inner,
+        text: original,
         ruleId: "heuristics.quoted-term",
         confidence: 0.6,
       });

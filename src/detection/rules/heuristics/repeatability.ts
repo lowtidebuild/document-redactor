@@ -19,6 +19,7 @@ import type {
   Heuristic,
   HeuristicContext,
 } from "../../_framework/types.js";
+import { recoverOriginalSlice } from "../../_framework/recover-bytes.js";
 import { ROLE_BLACKLIST_EN } from "../role-blacklist-en.js";
 import { ROLE_BLACKLIST_KO } from "../role-blacklist-ko.js";
 
@@ -40,6 +41,7 @@ export const REPEATABILITY: Heuristic = {
     const priorTexts = new Set(ctx.priorCandidates.map((c) => c.text));
 
     const counts = new Map<string, number>();
+    const firstSpans = new Map<string, readonly [number, number]>();
 
     const enPattern =
       /(?<![A-Za-z])[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}(?![A-Za-z])/g;
@@ -47,12 +49,18 @@ export const REPEATABILITY: Heuristic = {
     while ((m = enPattern.exec(text)) !== null) {
       const token = m[0]!;
       counts.set(token, (counts.get(token) ?? 0) + 1);
+      if (!firstSpans.has(token)) {
+        firstSpans.set(token, [m.index, m.index + token.length]);
+      }
     }
 
     const koPattern = /(?<![가-힣])[가-힣]{2,6}(?![가-힣])/g;
     while ((m = koPattern.exec(text)) !== null) {
       const token = m[0]!;
       counts.set(token, (counts.get(token) ?? 0) + 1);
+      if (!firstSpans.has(token)) {
+        firstSpans.set(token, [m.index, m.index + token.length]);
+      }
     }
 
     const out: Candidate[] = [];
@@ -62,8 +70,18 @@ export const REPEATABILITY: Heuristic = {
       if (priorTexts.has(token)) continue;
       if (ROLE_BLACKLIST_EN.has(token.toLowerCase())) continue;
       if (ROLE_BLACKLIST_KO.has(token)) continue;
+      const span = firstSpans.get(token);
+      const original =
+        span && ctx.originalText && ctx.map
+          ? recoverOriginalSlice(
+              ctx.originalText,
+              ctx.map,
+              span[0],
+              span[1],
+            )
+          : token;
       out.push({
-        text: token,
+        text: original,
         ruleId: "heuristics.repeatability",
         confidence: 0.5,
       });

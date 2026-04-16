@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeForMatching } from "../../normalize.js";
 import type { HeuristicContext } from "../../_framework/types.js";
 
 import { CAPITALIZATION_CLUSTER } from "./capitalization-cluster.js";
@@ -16,7 +17,12 @@ function makeContext(
 }
 
 function detect(text: string, ctx: HeuristicContext = makeContext()) {
-  return CAPITALIZATION_CLUSTER.detect(text, ctx);
+  const map = normalizeForMatching(text);
+  return CAPITALIZATION_CLUSTER.detect(map.text, {
+    ...ctx,
+    originalText: text,
+    map,
+  });
 }
 
 function expectFast(input: string, budgetMs = 100): void {
@@ -94,6 +100,26 @@ describe("heuristics.capitalization-cluster", () => {
     expect(result).toEqual([
       {
         text: "John Smith",
+        ruleId: "heuristics.capitalization-cluster",
+        confidence: 0.7,
+      },
+    ]);
+  });
+
+  it("recovers original bytes from smart-quoted input", () => {
+    expect(detect("\u201C\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50\u201D signed.")).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50",
+        ruleId: "heuristics.capitalization-cluster",
+        confidence: 0.7,
+      },
+    ]);
+  });
+
+  it("preserves fullwidth ASCII letters in candidate.text", () => {
+    expect(detect("\uFF21\uFF43\uFF4D\uFF45\u3000\uFF28\uFF4F\uFF4C\uFF44\uFF49\uFF4E\uFF47\uFF53 approved.")).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45\u3000\uFF28\uFF4F\uFF4C\uFF44\uFF49\uFF4E\uFF47\uFF53",
         ruleId: "heuristics.capitalization-cluster",
         confidence: 0.7,
       },

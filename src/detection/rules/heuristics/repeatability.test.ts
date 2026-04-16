@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeForMatching } from "../../normalize.js";
 import type { HeuristicContext } from "../../_framework/types.js";
 
 import { REPEATABILITY } from "./repeatability.js";
@@ -16,7 +17,12 @@ function makeContext(
 }
 
 function detect(text: string, ctx: HeuristicContext = makeContext()) {
-  return REPEATABILITY.detect(text, ctx);
+  const map = normalizeForMatching(text);
+  return REPEATABILITY.detect(map.text, {
+    ...ctx,
+    originalText: text,
+    map,
+  });
 }
 
 function expectFast(input: string, budgetMs = 100): void {
@@ -117,6 +123,34 @@ describe("heuristics.repeatability", () => {
     ).toEqual([
       {
         text: "Acme Corp",
+        ruleId: "heuristics.repeatability",
+        confidence: 0.5,
+      },
+    ]);
+  });
+
+  it("recovers original bytes from repeated smart-quoted input", () => {
+    expect(
+      detect(
+        "\u201C\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50\u201D signed. \u201C\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50\u201D approved. \u201C\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50\u201D closed.",
+      ),
+    ).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50",
+        ruleId: "heuristics.repeatability",
+        confidence: 0.5,
+      },
+    ]);
+  });
+
+  it("preserves fullwidth ASCII letters in repeated candidate.text", () => {
+    expect(
+      detect(
+        "\uFF21\uFF43\uFF4D\uFF45 signed. \uFF21\uFF43\uFF4D\uFF45 approved. \uFF21\uFF43\uFF4D\uFF45 closed.",
+      ),
+    ).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45",
         ruleId: "heuristics.repeatability",
         confidence: 0.5,
       },

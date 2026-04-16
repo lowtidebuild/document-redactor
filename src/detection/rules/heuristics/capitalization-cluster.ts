@@ -9,8 +9,7 @@
  *   2. Prior candidate skip — already-found strings excluded
  *   3. Role blacklist — generic legal roles excluded
  *   4. Confidence 0.7 (moderate — caps clusters are common in English prose)
- *   5. Returns normalized text as candidate.text (ASCII letters are
- *      normalized losslessly, so normalized = original for this heuristic)
+ *   5. Recovers original bytes for candidate.text via HeuristicContext.map
  *
  * See docs/phases/phase-1-rulebook.md § 14.4.1
  */
@@ -20,6 +19,7 @@ import type {
   Heuristic,
   HeuristicContext,
 } from "../../_framework/types.js";
+import { recoverOriginalSlice } from "../../_framework/recover-bytes.js";
 import { ROLE_BLACKLIST_EN } from "../role-blacklist-en.js";
 
 export const CAPITALIZATION_CLUSTER: Heuristic = {
@@ -46,8 +46,17 @@ export const CAPITALIZATION_CLUSTER: Heuristic = {
       if (ROLE_BLACKLIST_EN.has(candidate.toLowerCase())) continue;
       const words = candidate.split(/\s+/);
       if (words.some((w) => ROLE_BLACKLIST_EN.has(w.toLowerCase()))) continue;
+      const original =
+        ctx.originalText && ctx.map
+          ? recoverOriginalSlice(
+              ctx.originalText,
+              ctx.map,
+              m.index,
+              m.index + candidate.length,
+            )
+          : candidate;
       out.push({
-        text: candidate,
+        text: original,
         ruleId: "heuristics.capitalization-cluster",
         confidence: 0.7,
       });

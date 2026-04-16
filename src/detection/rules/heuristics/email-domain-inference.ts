@@ -19,6 +19,7 @@ import type {
   Heuristic,
   HeuristicContext,
 } from "../../_framework/types.js";
+import { recoverOriginalSlice } from "../../_framework/recover-bytes.js";
 import { ROLE_BLACKLIST_EN } from "../role-blacklist-en.js";
 
 /** Common TLDs to strip. */
@@ -39,6 +40,22 @@ function titleCase(s: string): string {
   return s[0]!.toUpperCase() + s.slice(1).toLowerCase();
 }
 
+function recoverInferredText(
+  normalizedText: string,
+  inferred: string,
+  ctx: HeuristicContext,
+): string {
+  if (!ctx.originalText || !ctx.map) return inferred;
+  const startNorm = normalizedText.indexOf(inferred);
+  if (startNorm < 0) return inferred;
+  return recoverOriginalSlice(
+    ctx.originalText,
+    ctx.map,
+    startNorm,
+    startNorm + inferred.length,
+  );
+}
+
 export const EMAIL_DOMAIN_INFERENCE: Heuristic = {
   id: "heuristics.email-domain-inference",
   category: "heuristics",
@@ -47,7 +64,7 @@ export const EMAIL_DOMAIN_INFERENCE: Heuristic = {
   levels: ["paranoid"],
   description:
     "Infer company name from email domain (legal@acme-corp.com → 'Acme Corp')",
-  detect(_text: string, ctx: HeuristicContext): readonly Candidate[] {
+  detect(text: string, ctx: HeuristicContext): readonly Candidate[] {
     const definedLabels = new Set(
       ctx.structuralDefinitions.map((d) => d.label),
     );
@@ -93,7 +110,7 @@ export const EMAIL_DOMAIN_INFERENCE: Heuristic = {
       const confidence = CORPORATE_PREFIXES.has(localPart) ? 0.8 : 0.6;
 
       out.push({
-        text: inferred,
+        text: recoverInferredText(text, inferred, ctx),
         ruleId: "heuristics.email-domain-inference",
         confidence,
       });

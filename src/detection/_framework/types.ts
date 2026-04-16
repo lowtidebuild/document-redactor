@@ -1,3 +1,5 @@
+import type { PositionMap } from "../normalize.js";
+
 /**
  * Rule framework types — Phase 0.
  *
@@ -112,11 +114,15 @@ export interface Candidate {
  *  - structuralDefinitions (from structural phase) to skip D9 defined labels
  *  - priorCandidates (from regex phase) to avoid double-counting
  *  - documentLanguage (from runner) to filter role blacklists
+ *  - originalText + map (from runner) to recover original bytes for emitted
+ *    candidates without re-normalizing
  */
 export interface HeuristicContext {
   readonly structuralDefinitions: readonly StructuralDefinition[];
   readonly priorCandidates: readonly Candidate[];
   readonly documentLanguage: "ko" | "en" | "mixed";
+  readonly originalText?: string;
+  readonly map?: PositionMap;
 }
 
 /**

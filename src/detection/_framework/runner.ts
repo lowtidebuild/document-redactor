@@ -320,7 +320,18 @@ export function runHeuristicPhase(
   if (text.length === 0) return [];
   const map = normalizeForMatching(text);
   if (map.text.length === 0) return [];
-  return runHeuristicPhaseOnMap(map, level, heuristics, context, opts);
+  const heuristicContext: HeuristicContext = {
+    ...context,
+    originalText: text,
+    map,
+  };
+  return runHeuristicPhaseOnMap(
+    map,
+    level,
+    heuristics,
+    heuristicContext,
+    opts,
+  );
 }
 
 /**
@@ -462,6 +473,8 @@ export function runAllPhases(text: string, opts: RunAllOptions): RunAllResult {
     structuralDefinitions,
     priorCandidates: regexCandidates,
     documentLanguage,
+    originalText: text,
+    map,
   };
   const heuristicCandidates = runHeuristicPhaseOnMap(
     map,

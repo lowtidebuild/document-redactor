@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeForMatching } from "../../normalize.js";
 import type { Candidate, HeuristicContext } from "../../_framework/types.js";
 
 import { EMAIL_DOMAIN_INFERENCE } from "./email-domain-inference.js";
@@ -16,13 +17,18 @@ function makeContext(
   };
 }
 
-function detect(ctx: HeuristicContext) {
-  return EMAIL_DOMAIN_INFERENCE.detect("", ctx);
+function detect(text: string, ctx: HeuristicContext) {
+  const map = normalizeForMatching(text);
+  return EMAIL_DOMAIN_INFERENCE.detect(map.text, {
+    ...ctx,
+    originalText: text,
+    map,
+  });
 }
 
 function expectFast(ctx: HeuristicContext, budgetMs = 100): void {
   const start = performance.now();
-  void detect(ctx);
+  void detect("", ctx);
   const elapsed = performance.now() - start;
   expect(elapsed).toBeLessThan(budgetMs);
 }
@@ -51,7 +57,7 @@ describe("heuristics.email-domain-inference", () => {
       [{ text: "Samsung", ruleId: "heuristics.email-domain-inference", confidence: 0.8 }],
     ],
   ])("%s", (_name, ctx, expected) => {
-    expect(detect(ctx)).toEqual(expected);
+    expect(detect("", ctx)).toEqual(expected);
   });
 
   it.each([
@@ -78,7 +84,7 @@ describe("heuristics.email-domain-inference", () => {
       [{ text: "Northwind", ruleId: "heuristics.email-domain-inference", confidence: 0.8 }],
     ],
   ])("%s", (_name, ctx, expected) => {
-    expect(detect(ctx)).toEqual(expected);
+    expect(detect("", ctx)).toEqual(expected);
   });
 
   it.each([
@@ -101,7 +107,7 @@ describe("heuristics.email-domain-inference", () => {
       ]),
     ],
   ])("%s", (_name, ctx) => {
-    expect(detect(ctx)).toEqual([]);
+    expect(detect("", ctx)).toEqual([]);
   });
 
   it("skips inferred names that match structural-definition labels (D9)", () => {
@@ -117,7 +123,7 @@ describe("heuristics.email-domain-inference", () => {
         ],
       },
     );
-    expect(detect(ctx)).toEqual([]);
+    expect(detect("", ctx)).toEqual([]);
   });
 
   it("skips inferred names already present in priorCandidates", () => {
@@ -125,25 +131,26 @@ describe("heuristics.email-domain-inference", () => {
       { text: "legal@acme-corp.com", ruleId: "identifiers.email", confidence: 1.0 },
       { text: "Acme Corp", ruleId: "entities.en-corp-suffix", confidence: 1.0 },
     ]);
-    expect(detect(ctx)).toEqual([]);
+    expect(detect("", ctx)).toEqual([]);
   });
 
   it("skips blacklisted inferred names like Party", () => {
     const ctx = makeContext([
       { text: "legal@party.com", ruleId: "identifiers.email", confidence: 1.0 },
     ]);
-    expect(detect(ctx)).toEqual([]);
+    expect(detect("", ctx)).toEqual([]);
   });
 
   it("skips blacklisted inferred names like Company", () => {
     const ctx = makeContext([
       { text: "legal@company.com", ruleId: "identifiers.email", confidence: 1.0 },
     ]);
-    expect(detect(ctx)).toEqual([]);
+    expect(detect("", ctx)).toEqual([]);
   });
 
   it("emits 0.8 for corporate prefixes and 0.6 for personal prefixes", () => {
     const result = detect(
+      "",
       makeContext([
         { text: "legal@acme-corp.com", ruleId: "identifiers.email", confidence: 1.0 },
         { text: "john@beta.com", ruleId: "identifiers.email", confidence: 1.0 },
@@ -159,6 +166,32 @@ describe("heuristics.email-domain-inference", () => {
         text: "Beta",
         ruleId: "heuristics.email-domain-inference",
         confidence: 0.6,
+      },
+    ]);
+  });
+
+  it("recovers original bytes from smart-quoted document occurrences", () => {
+    const ctx = makeContext([
+      { text: "legal@acme-corp.com", ruleId: "identifiers.email", confidence: 1.0 },
+    ]);
+    expect(detect("\u201C\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50\u201D is the counterparty.", ctx)).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45\u3000\uFF23\uFF4F\uFF52\uFF50",
+        ruleId: "heuristics.email-domain-inference",
+        confidence: 0.8,
+      },
+    ]);
+  });
+
+  it("preserves fullwidth digits when recovering inferred names from text", () => {
+    const ctx = makeContext([
+      { text: "legal@acme-123.com", ruleId: "identifiers.email", confidence: 1.0 },
+    ]);
+    expect(detect("\uFF21\uFF43\uFF4D\uFF45\u3000\uFF11\uFF12\uFF13 responded.", ctx)).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45\u3000\uFF11\uFF12\uFF13",
+        ruleId: "heuristics.email-domain-inference",
+        confidence: 0.8,
       },
     ]);
   });

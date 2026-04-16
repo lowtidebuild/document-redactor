@@ -17,7 +17,12 @@ function makeContext(
 }
 
 function detectRaw(text: string, ctx: HeuristicContext = makeContext()) {
-  return QUOTED_TERM.detect(normalizeForMatching(text).text, ctx);
+  const map = normalizeForMatching(text);
+  return QUOTED_TERM.detect(map.text, {
+    ...ctx,
+    originalText: text,
+    map,
+  });
 }
 
 function expectFast(input: string, budgetMs = 100): void {
@@ -82,6 +87,26 @@ describe("heuristics.quoted-term", () => {
     expect(detectRaw('"Acme Corp" shall survive.')).toEqual([
       {
         text: "Acme Corp",
+        ruleId: "heuristics.quoted-term",
+        confidence: 0.6,
+      },
+    ]);
+  });
+
+  it("recovers original inner bytes from smart-quoted input", () => {
+    expect(detectRaw("\u201C\uFF21\uFF43\uFF4D\uFF45\u3000\uFF11\uFF12\uFF13\u201D shall survive.")).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45\u3000\uFF11\uFF12\uFF13",
+        ruleId: "heuristics.quoted-term",
+        confidence: 0.6,
+      },
+    ]);
+  });
+
+  it("preserves fullwidth digits in candidate.text", () => {
+    expect(detectRaw('"\uFF21\uFF43\uFF4D\uFF45\uFF11\uFF12\uFF13" shall survive.')).toEqual([
+      {
+        text: "\uFF21\uFF43\uFF4D\uFF45\uFF11\uFF12\uFF13",
         ruleId: "heuristics.quoted-term",
         confidence: 0.6,
       },
