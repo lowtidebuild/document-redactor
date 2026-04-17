@@ -1,6 +1,6 @@
 import type JSZip from "jszip";
 
-import { loadDocxZip } from "../docx/load.js";
+import { loadDocxZip, readZipEntry } from "../docx/load.js";
 import { collectVerifySurfaces } from "../docx/verify-surfaces.js";
 import type { ResolvedRedactionTarget } from "../selection-targets.js";
 
@@ -124,7 +124,7 @@ export async function applyRelsRepairsToZip(
   for (const [path, literals] of relsRepairs) {
     const file = zip.file(path);
     if (file === null) continue;
-    const xml = await file.async("string");
+    const xml = await readZipEntry(zip, path);
     const repaired = repairRelationshipTargets(xml, literals, placeholder);
     zip.file(path, repaired);
   }

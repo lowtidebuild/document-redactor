@@ -12,6 +12,7 @@
 
 import type JSZip from "jszip";
 
+import { readZipEntry } from "./load.js";
 import { SCOPE_PATTERNS, type Scope, type ScopeKind } from "./types.js";
 
 /**
@@ -73,11 +74,7 @@ export async function readScopeXml(
   zip: JSZip,
   scope: Scope,
 ): Promise<string> {
-  const file = zip.file(scope.path);
-  if (file === null) {
-    throw new Error(`scope ${scope.path} not found in zip`);
-  }
-  return file.async("string");
+  return readZipEntry(zip, scope.path);
 }
 
 /**

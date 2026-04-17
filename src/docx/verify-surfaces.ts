@@ -1,6 +1,7 @@
 import type JSZip from "jszip";
 
 import { extractScopeText } from "../detection/extract-text.js";
+import { readZipEntry } from "./load.js";
 import { listScopes, readScopeXml } from "./scopes.js";
 import type { Scope } from "./types.js";
 
@@ -50,7 +51,7 @@ export async function collectVerifySurfaces(zip: JSZip): Promise<VerifySurfaces>
 
   const relsTargetSurfaces: RelsTargetSurface[] = [];
   for (const path of listRelsPaths(zip)) {
-    const xml = await zip.file(path)!.async("string");
+    const xml = await readZipEntry(zip, path);
     for (const text of extractRelationshipTargets(xml)) {
       relsTargetSurfaces.push({ kind: "rels-target", path, text });
     }

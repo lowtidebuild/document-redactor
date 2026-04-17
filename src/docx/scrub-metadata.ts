@@ -14,6 +14,7 @@
 
 import type JSZip from "jszip";
 
+import { readZipEntry } from "./load.js";
 import { METADATA_SENSITIVE_FIELDS } from "./types.js";
 
 /**
@@ -49,7 +50,7 @@ export async function scrubDocxMetadata(zip: JSZip): Promise<void> {
   for (const path of targets) {
     const file = zip.file(path);
     if (file === null) continue;
-    const xml = await file.async("string");
+    const xml = await readZipEntry(zip, path);
     const cleaned = scrubMetadataXml(xml, METADATA_SENSITIVE_FIELDS);
     zip.file(path, cleaned);
   }
