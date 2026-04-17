@@ -24,6 +24,18 @@ const APP_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Application>Microsoft Word</Application>
 </Properties>`;
 
+const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>
+</Types>`;
+
+const CUSTOM_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties">
+  <property name="AuthorEmail"><vt:lpwstr xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">kim@example.com</vt:lpwstr></property>
+</Properties>`;
+
 describe("scrubMetadataXml", () => {
   it("zeroes out dc:creator", () => {
     const out = scrubMetadataXml(CORE_XML, ["creator"]);
@@ -116,5 +128,42 @@ describe("scrubDocxMetadata", () => {
     await scrubDocxMetadata(zip);
     const newCore = await zip.file("docProps/core.xml")!.async("string");
     expect(newCore).not.toContain("Kim Chul-Soo");
+  });
+
+  it("removes docProps/custom.xml entirely when present", async () => {
+    const zip = new JSZip();
+    zip.file("docProps/custom.xml", CUSTOM_XML);
+    zip.file("[Content_Types].xml", CONTENT_TYPES_XML);
+
+    await scrubDocxMetadata(zip);
+
+    expect(zip.file("docProps/custom.xml")).toBeNull();
+  });
+
+  it("removes the custom.xml override from [Content_Types].xml", async () => {
+    const zip = new JSZip();
+    zip.file("docProps/custom.xml", CUSTOM_XML);
+    zip.file("[Content_Types].xml", CONTENT_TYPES_XML);
+
+    await scrubDocxMetadata(zip);
+
+    const contentTypes = await zip.file("[Content_Types].xml")!.async("string");
+    expect(contentTypes).not.toContain(`/docProps/custom.xml`);
+    expect(contentTypes).toContain(`/word/document.xml`);
+  });
+
+  it("leaves [Content_Types].xml alone when no custom override exists", async () => {
+    const zip = new JSZip();
+    const contentTypes = CONTENT_TYPES_XML.replace(
+      /\s*<Override\b[^>]*PartName="\/docProps\/custom\.xml"[^>]*\/>/,
+      "",
+    );
+    zip.file("[Content_Types].xml", contentTypes);
+
+    await scrubDocxMetadata(zip);
+
+    expect(await zip.file("[Content_Types].xml")!.async("string")).toBe(
+      contentTypes,
+    );
   });
 });

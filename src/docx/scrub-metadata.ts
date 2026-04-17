@@ -43,7 +43,8 @@ export function scrubMetadataXml(xml: string, fields: ReadonlyArray<string>): st
 /**
  * Apply the standard scrub policy to a DOCX zip in place. Reads
  * `docProps/core.xml` and `docProps/app.xml`, scrubs each, and writes them
- * back. Idempotent.
+ * back. Removes `docProps/custom.xml` entirely because its schema is
+ * free-form and can hide arbitrary metadata payloads. Idempotent.
  */
 export async function scrubDocxMetadata(zip: JSZip): Promise<void> {
   const targets = ["docProps/core.xml", "docProps/app.xml"];
@@ -54,8 +55,24 @@ export async function scrubDocxMetadata(zip: JSZip): Promise<void> {
     const cleaned = scrubMetadataXml(xml, METADATA_SENSITIVE_FIELDS);
     zip.file(path, cleaned);
   }
+
+  if (zip.file("docProps/custom.xml") !== null) {
+    zip.remove("docProps/custom.xml");
+  }
+
+  if (zip.file("[Content_Types].xml") !== null) {
+    const xml = await readZipEntry(zip, "[Content_Types].xml");
+    zip.file("[Content_Types].xml", removeCustomPropsOverride(xml));
+  }
 }
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function removeCustomPropsOverride(xml: string): string {
+  return xml.replace(
+    /\s*<Override\b[^>]*PartName=["']\/docProps\/custom\.xml["'][^>]*\/>/g,
+    "",
+  );
 }
