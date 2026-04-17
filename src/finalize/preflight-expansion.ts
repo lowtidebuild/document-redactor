@@ -1,5 +1,6 @@
-import JSZip from "jszip";
+import type JSZip from "jszip";
 
+import { loadDocxZip } from "../docx/load.js";
 import { collectVerifySurfaces } from "../docx/verify-surfaces.js";
 import type { ResolvedRedactionTarget } from "../selection-targets.js";
 
@@ -29,7 +30,7 @@ export async function buildPreflightExpansionPlan(
     };
   }
 
-  const zip = await JSZip.loadAsync(bytes.slice());
+  const zip = await loadDocxZip(bytes);
   const surfaces = await collectVerifySurfaces(zip);
   const extraLiterals = new Map<string, Set<string>>();
   const relsRepairs = new Map<string, Set<string>>();

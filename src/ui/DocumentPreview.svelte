@@ -14,12 +14,8 @@
     have that can come later.
 -->
 <script lang="ts">
-  import JSZip from "jszip";
-
-  import {
-    renderDocumentBody,
-    type RenderedDocument,
-  } from "../docx/render-body.js";
+  import { loadDocxZip } from "../docx/load.js";
+  import { renderDocumentBody, type RenderedDocument } from "../docx/render-body.js";
   import RenderedBody from "./RenderedBody.svelte";
   import { appState, type AppPhase } from "./state.svelte.ts";
 
@@ -102,7 +98,7 @@
     if (cached !== undefined) return cached;
 
     const promise = (async () => {
-      const zip = await JSZip.loadAsync(bytes.slice());
+      const zip = await loadDocxZip(bytes);
       return await renderDocumentBody(zip);
     })();
     renderedDocCache.set(bytes, promise);

@@ -1,5 +1,4 @@
-import JSZip from "jszip";
-
+import { loadDocxZip } from "../docx/load.js";
 import {
   finalizeRedaction,
   type FinalizeOptions,
@@ -261,7 +260,7 @@ async function defaultRepairPass(
   repairPlan: RepairPlan,
   options: GuidedRecoveryOptions,
 ): Promise<FinalizedReport> {
-  const zip = await JSZip.loadAsync(bytes.slice());
+  const zip = await loadDocxZip(bytes);
   await applyRelsRepairsToZip(
     zip,
     repairPlan.relsRepairs,

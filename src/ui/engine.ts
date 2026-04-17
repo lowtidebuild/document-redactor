@@ -29,8 +29,6 @@
  * which is what makes both halves independently testable.
  */
 
-import JSZip from "jszip";
-
 import {
   detectAllInZip,
   type ScopedCandidate,
@@ -40,6 +38,7 @@ import { extractTextFromZip } from "../detection/extract-text.js";
 import { normalizeForMatching } from "../detection/normalize.js";
 import { ROLE_BLACKLIST_EN } from "../detection/rules/role-blacklist-en.js";
 import { ROLE_BLACKLIST_KO } from "../detection/rules/role-blacklist-ko.js";
+import { loadDocxZip } from "../docx/load.js";
 import { listScopes } from "../docx/scopes.js";
 import type { Scope } from "../docx/types.js";
 import {
@@ -177,7 +176,7 @@ export async function analyzeZip(
   // whatever the caller handed us. Avoids subtle bugs where a second
   // call to analyzeZip sees mutations JSZip made to the underlying
   // buffer during its own processing.
-  const zip = await JSZip.loadAsync(bytes.slice());
+  const zip = await loadDocxZip(bytes);
 
   // File stats — size of the input + number of text-bearing scopes.
   // sizeBytes comes from the caller's view (the bytes they actually
@@ -301,7 +300,7 @@ export async function applyRedaction(
     resolveSelectedTargets(analysis.selectionTargets, selections);
   const preflightPlan = await buildPreflightExpansionPlan(bytes, selectedTargets);
   // Fresh reload every time — see docstring.
-  const zip = await JSZip.loadAsync(bytes.slice());
+  const zip = await loadDocxZip(bytes);
   await applyRelsRepairsToZip(
     zip,
     preflightPlan.relsRepairs,
