@@ -87,7 +87,7 @@ export function extractFldSimpleInstrValues(xml: string): readonly string[] {
 
 export function extractRelationshipTargets(relsXml: string): readonly string[] {
   const out: string[] = [];
-  const re = /<Relationship\b[^>]*\bTarget="([^"]*)"/g;
+  const re = /<Relationship\b[^>]*\bTarget=["']([^"']*)["']/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(relsXml)) !== null) {
     out.push(decodeXml(match[1] ?? ""));

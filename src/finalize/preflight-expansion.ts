@@ -121,11 +121,12 @@ export async function applyRelsRepairsToZip(
   relsRepairs: ReadonlyMap<string, readonly string[]>,
   placeholder = "[REDACTED]",
 ): Promise<void> {
-  for (const [path, literals] of relsRepairs) {
-    const file = zip.file(path);
-    if (file === null) continue;
+  for (const path of listRelsPaths(zip)) {
+    const literals = relsRepairs.get(path) ?? [];
     const xml = await readZipEntry(zip, path);
-    const repaired = repairRelationshipTargets(xml, literals, placeholder);
+    const repaired = stripExternalUrls(
+      repairRelationshipTargets(xml, literals, placeholder),
+    );
     zip.file(path, repaired);
   }
 }
@@ -152,6 +153,18 @@ function repairRelationshipTargets(
       return `${open}${encodeXmlAttr(repaired)}${close}`;
     },
   );
+}
+
+function stripExternalUrls(relsXml: string): string {
+  let result = relsXml.replace(
+    /(<Relationship\b[^>]*\bTarget=)"(https?:\/\/[^"]*)"/g,
+    '$1""',
+  );
+  result = result.replace(
+    /(<Relationship\b[^>]*\bTarget=)'(https?:\/\/[^']*)'/g,
+    "$1''",
+  );
+  return result;
 }
 
 function idleSummary(): PreflightExpansionSummary {
@@ -191,4 +204,15 @@ function decodeXml(text: string): string {
     .replace(/&#(\d+);/g, (_, dec: string) =>
       String.fromCodePoint(Number.parseInt(dec, 10)),
     );
+}
+
+function listRelsPaths(zip: JSZip): string[] {
+  const paths: string[] = [];
+  zip.forEach((relativePath, file) => {
+    if (file.dir) return;
+    if (relativePath.endsWith(".rels")) {
+      paths.push(relativePath);
+    }
+  });
+  return paths.sort();
 }

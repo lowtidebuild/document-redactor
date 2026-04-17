@@ -32,4 +32,13 @@ describe("verify-surfaces", () => {
       "https://example.com/second",
     ]);
   });
+
+  it("extracts relationship Target values from single-quoted attributes too", () => {
+    const rels = `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId1" Target='https://example.com/first'/><Relationship Id="rId2" Target='mailto:second@example.com'/></Relationships>`;
+
+    expect(extractRelationshipTargets(rels)).toEqual([
+      "https://example.com/first",
+      "mailto:second@example.com",
+    ]);
+  });
 });

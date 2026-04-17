@@ -36,6 +36,7 @@ import { collectVerifySurfaces } from "./verify-surfaces.js";
 import type { Scope } from "./types.js";
 
 export type VerifySurfaceKind = "text" | "field" | "rels";
+const EXTERNAL_URL_TARGET_ID = "security:external-url";
 
 /** One sensitive string that survived in one scope. */
 export interface SurvivedString {
@@ -121,6 +122,22 @@ export async function verifyRedaction(
 
   for (const surface of surfaces.relsTargetSurfaces) {
     const scope = { kind: "rels", path: surface.path } as unknown as Scope;
+    if (isExternalHttpUrl(surface.text)) {
+      mergeSurvival(
+        survivedByKey,
+        {
+          id: `${EXTERNAL_URL_TARGET_ID}:${surface.text}`,
+          displayText: surface.text,
+          redactionLiterals: [surface.text],
+          verificationLiterals: [surface.text],
+          scopes: [scope],
+        },
+        scope,
+        "rels",
+        1,
+        surface.text,
+      );
+    }
     for (const target of activeTargets) {
       for (const literal of target.verificationLiterals) {
         const count = countOccurrences(surface.text, literal);
@@ -206,4 +223,8 @@ function mergeSurvival(
     count: existing.count + count,
     matchedLiteral: existing.matchedLiteral ?? matchedLiteral,
   });
+}
+
+function isExternalHttpUrl(text: string): boolean {
+  return text.startsWith("http://") || text.startsWith("https://");
 }

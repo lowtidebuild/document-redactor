@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 
 import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
-import { buildPreflightExpansionPlan } from "./preflight-expansion.js";
+import {
+  applyRelsRepairsToZip,
+  buildPreflightExpansionPlan,
+} from "./preflight-expansion.js";
 import type { ResolvedRedactionTarget } from "../selection-targets.js";
 
 const W_NS = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`;
@@ -13,6 +16,14 @@ async function syntheticDocx(parts: Record<string, string>): Promise<Uint8Array>
     zip.file(path, content);
   }
   return zip.generateAsync({ type: "uint8array" });
+}
+
+function syntheticZip(parts: Record<string, string>): JSZip {
+  const zip = new JSZip();
+  for (const [path, content] of Object.entries(parts)) {
+    zip.file(path, content);
+  }
+  return zip;
 }
 
 function bodyWith(text: string): string {
@@ -143,5 +154,76 @@ describe("preflight-expansion", () => {
       touchedRelsSurface: true,
       expandedLiteralCount: 0,
     });
+  });
+
+  it("strips double-quoted http URLs from rels", async () => {
+    const zip = syntheticZip({
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="http://evil.example/pixel"/></Relationships>`,
+    });
+
+    await applyRelsRepairsToZip(zip, new Map());
+
+    const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
+    expect(rels).toContain(`Target=""`);
+    expect(rels).not.toContain("http://evil.example/pixel");
+  });
+
+  it("strips double-quoted https URLs from rels", async () => {
+    const zip = syntheticZip({
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="https://track.example/pixel"/></Relationships>`,
+    });
+
+    await applyRelsRepairsToZip(zip, new Map());
+
+    const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
+    expect(rels).toContain(`Target=""`);
+    expect(rels).not.toContain("https://track.example/pixel");
+  });
+
+  it("strips single-quoted https URLs from rels", async () => {
+    const zip = syntheticZip({
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target='https://track.example/pixel'/></Relationships>`,
+    });
+
+    await applyRelsRepairsToZip(zip, new Map());
+
+    const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
+    expect(rels).toContain(`Target=''`);
+    expect(rels).not.toContain("https://track.example/pixel");
+  });
+
+  it("preserves mailto targets in rels", async () => {
+    const zip = syntheticZip({
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="mailto:legal@example.com"/></Relationships>`,
+    });
+
+    await applyRelsRepairsToZip(zip, new Map());
+
+    const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
+    expect(rels).toContain(`mailto:legal@example.com`);
+  });
+
+  it("preserves relative targets in rels", async () => {
+    const zip = syntheticZip({
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="media/image1.png"/></Relationships>`,
+    });
+
+    await applyRelsRepairsToZip(zip, new Map());
+
+    const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
+    expect(rels).toContain(`Target="media/image1.png"`);
+  });
+
+  it("strips only external URLs in mixed rels content", async () => {
+    const zip = syntheticZip({
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Target="https://track.example/pixel"/><Relationship Target="media/image1.png"/><Relationship Target="mailto:legal@example.com"/></Relationships>`,
+    });
+
+    await applyRelsRepairsToZip(zip, new Map());
+
+    const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
+    expect(rels).toContain(`Target=""`);
+    expect(rels).toContain(`Target="media/image1.png"`);
+    expect(rels).toContain(`Target="mailto:legal@example.com"`);
   });
 });

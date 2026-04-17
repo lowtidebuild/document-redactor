@@ -179,6 +179,36 @@ describe("verifyRedaction", () => {
     expect(result.survived).toEqual([]);
   });
 
+  it("fails verification when an external http URL survives in rels", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("[REDACTED]"),
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Target="http://evil.example/track"/></Relationships>`,
+    });
+    const result = await verifyRedaction(zip, resolved("unrelated@example.com"));
+    expect(result.isClean).toBe(false);
+    expect(result.survived).toEqual([
+      expect.objectContaining({
+        text: "http://evil.example/track",
+        surface: "rels",
+      }),
+    ]);
+  });
+
+  it("fails verification when a single-quoted external https URL survives in rels", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("[REDACTED]"),
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Target='https://evil.example/track'/></Relationships>`,
+    });
+    const result = await verifyRedaction(zip, resolved("unrelated@example.com"));
+    expect(result.isClean).toBe(false);
+    expect(result.survived).toEqual([
+      expect.objectContaining({
+        text: "https://evil.example/track",
+        surface: "rels",
+      }),
+    ]);
+  });
+
   it("enumerates multiple rels files in sorted path order", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("[REDACTED]"),
