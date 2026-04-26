@@ -7,9 +7,10 @@
  * The UI needs a coarser API that matches how a user interacts with
  * the app:
  *
- *   1. **analyzeZip(bytes, seeds)** — drop a file, get back the full
+ *   1. **analyzeZip(bytes, seeds?)** — drop a file, get back the full
  *      candidates tree (literals, defined terms, PII) plus file stats
- *      for the header pill row. Does NOT mutate the bytes.
+ *      for the header pill row. The optional seed list is an internal
+ *      propagation hook, not a public UI control. Does NOT mutate bytes.
  *
  *   2. **defaultSelections(analysis)** — the D9 default state for the
  *      checkbox tree: all literals checked, all PII checked, all defined
@@ -168,12 +169,13 @@ export interface ApplyOptions {
 /**
  * Drop a .docx into this and get back the full candidates tree plus
  * file stats. Does NOT mutate `bytes` — the caller holds the original
- * and can re-run analysis any number of times (e.g. when the user
- * changes the seed list).
+ * and can re-run analysis any number of times. Internal tests and
+ * future engine callers can pass seeds to exercise Lane C propagation;
+ * the shipping UI calls this without seeds.
  */
 export async function analyzeZip(
   bytes: Uint8Array,
-  seeds: ReadonlyArray<string>,
+  seeds: ReadonlyArray<string> = [],
 ): Promise<Analysis> {
   // Copy into a fresh ArrayBuffer so JSZip can't retain a reference into
   // whatever the caller handed us. Avoids subtle bugs where a second

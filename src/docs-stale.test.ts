@@ -64,4 +64,28 @@ describe("documentation stale guards", () => {
       }
     }
   });
+
+  it("keeps seed propagation out of the public UI surface", () => {
+    const hiddenSeedSetter = "appState." + "set" + "Seeds";
+    const seedSetter = "set" + "Seeds";
+    const defaultSeeds = "DEFAULT_" + "SEEDS";
+
+    for (const doc of [
+      "src/ui/Sidebar.svelte",
+      "src/ui/state.svelte.ts",
+      "docs/RULES_GUIDE.md",
+      "docs/review/project-review-brief.md",
+      "CLAUDE.md",
+    ]) {
+      const text = readDoc(doc);
+
+      expect(text, doc).not.toContain(hiddenSeedSetter);
+      expect(text, doc).not.toMatch(/seed\s+editor/i);
+    }
+
+    const state = readDoc("src/ui/state.svelte.ts");
+    expect(state).not.toContain(seedSetter);
+    expect(state).not.toContain(defaultSeeds);
+    expect(state).not.toMatch(/\bseeds\s*=\s*\$state/);
+  });
 });

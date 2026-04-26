@@ -125,19 +125,6 @@ export type ManualCategory =
   | "legal"
   | "other";
 
-/**
- * Default entity seeds — empty. Seeds drive Lane C variant propagation
- * (user says "ABC Corporation is a party" → propagate to "ABC Corp.",
- * "A.B.C." variants). The v1 UI does not expose a seed editor because
- * Phase 1's structural.party-declaration parser + entities regex rules
- * already catch the main parties automatically, and Phase 2's per-
- * category "+ 추가" affordance covers the missed-variant case.
- *
- * Callers that still want seed-driven propagation can call
- * `appState.setSeeds([...])` programmatically before `loadFile`.
- */
-const DEFAULT_SEEDS: readonly string[] = [];
-
 function createManualAdditions(): Map<ManualCategory, Set<string>> {
   return new Map([
     ["literals", new Set()],
@@ -343,9 +330,6 @@ function replaceSelectionTarget(
 class AppState {
   phase = $state<AppPhase>({ kind: "idle" });
 
-  /** The user's editable seed list, always available regardless of phase. */
-  seeds = $state<string[]>([...DEFAULT_SEEDS]);
-
   /**
    * Current checkbox selections — the set of selection target ids the
    * redactor will resolve when Apply is clicked. Mutable on purpose:
@@ -384,7 +368,7 @@ class AppState {
     this.residualRiskAcknowledged = false;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const analyzed = await analyzeZip(bytes, this.seeds);
+      const analyzed = await analyzeZip(bytes);
       const { analysis, manualSelectionIds } = mergePersistedManualTargets(
         analyzed,
         this.manualAdditions,
@@ -579,9 +563,6 @@ class AppState {
     }
   }
 
-  setSeeds(next: ReadonlyArray<string>): void {
-    this.seeds = [...next];
-  }
 }
 
 /** The one global state instance — import this from every component. */

@@ -337,7 +337,7 @@ The repository still contains a propagation layer for seed-driven alias expansio
 
 Important nuance:
 
-- the current public UI no longer centers a seed editor,
+- the current public UI has no seed-entry workflow or `AppState` seed API,
 - main parties are expected to be caught via structural and entity rules,
 - manual additions act as a fallback,
 - propagation remains a reusable and test-covered subsystem.

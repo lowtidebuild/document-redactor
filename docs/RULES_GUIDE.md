@@ -134,7 +134,7 @@ Person names and legal entity names — detected via **structural cues** (corpor
 - `CEO Jane Doe`, `President Kim`
 
 **What doesn't belong:**
-- Specific hardcoded names like "Acme Corp" (that's the **seed editor's** job, not a rule)
+- Specific hardcoded names like "Acme Corp" (use manual additions or internal propagation fixtures, not shipped rules)
 - Heuristic capitalization matches without a suffix cue → `heuristics`
 
 ### 2.5 `structural`
@@ -780,7 +780,7 @@ Per design-v1.md Lock-in #4, the UI exposes three levels: Conservative, Standard
 
 | Level | What it does | Who uses it |
 |---|---|---|
-| **Conservative** | Click-to-select + user seeds only. Structural parsers + identifiers (PII). **No heuristics.** No fuzzy matching. | Users who want full control, never want a tool to pick for them |
+| **Conservative** | Click-to-select + manual additions. Structural parsers + identifiers (PII). **No heuristics.** No fuzzy matching. | Users who want full control, never want a tool to pick for them |
 | **Standard (default)** | Conservative + financial + temporal + entities + legal. Covers 80%+ of real contracts with one click. **No heuristics.** | 95% of users — lawyers who want "drop, review, apply" |
 | **Paranoid** | Standard + heuristics (capitalization cluster, quoted term, repeatability). Adds false positives but catches everything. | High-risk M&A docs, maximum-risk filings |
 
@@ -892,7 +892,7 @@ const pattern = /(?<![\uAC00-\uD7A3])김철수(?![\uAC00-\uD7A3])/g;
 const pattern = /(ABC\s+Corp|Sunrise\s+Inc|Acme\s+Ltd)/g;
 ```
 
-Specific entity names are the seed editor's job. The tool should NOT ship with hardcoded lists of company names. Users add those at the UI level as seeds, which flow through variant propagation (Lane C). Rules should detect by STRUCTURE (suffix cues), not by LIST.
+Specific entity names belong in user review/manual additions or internal propagation fixtures. The tool should NOT ship with hardcoded lists of company names, and the current UI has no public seed-entry workflow. Rules should detect by STRUCTURE (suffix cues), not by LIST.
 
 ### 12.3 Whole-sentence matching
 
@@ -1062,7 +1062,7 @@ Phase 5 decides whether to stay on Path X (ship v1.1 with current rule set) or p
 
 ### 14.1 The bar (finalized 2026-04-10)
 
-- **Pass (ship Path X v1.1):** ≥90% auto-detection coverage on 3 real document samples, remaining ≤10% fillable by quick seed entry review (user adds misses in under 60 seconds after seeing auto-detect list).
+- **Pass (ship Path X v1.1):** ≥90% auto-detection coverage on 3 real document samples, remaining ≤10% fillable by quick manual-addition review (user adds misses in under 60 seconds after seeing auto-detect list).
 - **Borderline (one more Phase 4 tuning round):** 80–90% coverage.
 - **Fail (pivot to Path Y-lite):** <80% coverage.
 
@@ -1110,11 +1110,11 @@ coverage = |auto_detected ∩ ground_truth| / |ground_truth|
 false_positive_rate = |auto_detected \ ground_truth| / |auto_detected|
 ```
 
-The script runs the tool's `analyzeZip` pipeline without any user seeds and compares the auto-detected list against the ground truth. It does NOT require running the UI — pure engine test.
+The script runs the tool's `analyzeZip` pipeline without injected propagation seeds and compares the auto-detected list against the ground truth. It does NOT require running the UI — pure engine test.
 
 ### 14.5 Time-to-complete (secondary metric)
 
-For each sample, also measure: how long does the user spend going from "drop file" to "download redacted copy" in the UI, **including** the time to review the auto-detect list and add any missing seeds?
+For each sample, also measure: how long does the user spend going from "drop file" to "download redacted copy" in the UI, **including** the time to review the auto-detect list and add any missed strings?
 
 - Target: < 60 seconds for a 10–20 page contract
 - Time under 30 seconds → Path X is working
