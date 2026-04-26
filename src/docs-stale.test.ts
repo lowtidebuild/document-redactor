@@ -45,4 +45,23 @@ describe("documentation stale guards", () => {
     expect(rulesGuide).not.toContain("context.definedTerms");
     expect(rulesGuide).not.toContain("DefinedTerm");
   });
+
+  it("keeps external review prompts model-agnostic and schema-based", () => {
+    for (const doc of [
+      "docs/review/project-review-brief.md",
+      "docs/review/rule-engine-review-brief.md",
+    ]) {
+      const text = readDoc(doc);
+      expect(text, doc).not.toContain("ChatGPT 5.4");
+      for (const field of [
+        "severity: P0 | P1 | P2",
+        "dimension: correctness | safety | architecture | performance | prompt | docs",
+        "evidence: file:line",
+        "proposed_fix",
+        "tests_to_add",
+      ]) {
+        expect(text, `${doc} missing ${field}`).toContain(field);
+      }
+    }
+  });
 });

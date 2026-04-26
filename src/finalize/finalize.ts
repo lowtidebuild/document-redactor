@@ -1,37 +1,12 @@
 /**
- * Finalization orchestrator — Lane D's top-level entry point.
+ * Finalization orchestrator.
  *
- * The product's full pipeline, from loaded zip to ship-ready artifact:
- *
- *   1. **Snapshot word count** (before redaction) — needed to compute
- *      the sanity check's drop percentage.
- *   2. **Run `redactDocx`** — Lane B applies the mutation pipeline and
- *      returns the scope-mutation list + the round-trip verify result.
- *   3. **Snapshot word count again** (after redaction) — for the delta.
- *   4. **Evaluate word-count sanity** — flags over-redaction (default
- *      threshold: 30% drop per D7 Paranoid row).
- *   5. **Generate output bytes** with a **deterministic** timestamp so
- *      identical inputs → identical hashes. JSZip's default embeds the
- *      current wall-clock time in each entry, which would destroy the
- *      "two lawyers hashing the same file get the same digest" property.
- *   6. **Hash the output bytes** with SHA-256 — the value shown in the
- *      green "Download ready" banner, used by recipients to verify
- *      transport integrity.
- *
- * Output: a `FinalizedReport` containing everything the UI needs to
- * render the download banner, the audit log, and the view-source modal,
- * plus `outputBytes` the caller can wrap in a Blob and hand to
- * `URL.createObjectURL`.
- *
- * Strict clean gate: `isStrictlyCleanReport(report)` returns true iff BOTH
- * `verify.isClean` AND `wordCount.sane` are true. UI download policy may
- * still allow warning or acknowledgement-gated risk outputs, but those are
- * not strictly clean reports.
- *
- * Public API:
- *   - `finalizeRedaction(zip, options)` — async, returns `FinalizedReport`.
- *   - `isStrictlyCleanReport(report)` — sync predicate for the strict clean gate.
- *   - `FinalizedReport`, `FinalizeOptions`.
+ * Contract:
+ * - mutate only the fresh zip passed by the caller;
+ * - verify selected literals after redaction;
+ * - evaluate word-count sanity separately from verification;
+ * - serialize deterministic bytes and hash the exact download payload;
+ * - treat `isStrictlyCleanReport` as stricter than UI download policy.
  */
 
 import type JSZip from "jszip";

@@ -2,7 +2,7 @@
 
 ## Purpose of this document
 
-This brief is meant for an external technical reviewer, especially a frontier reasoning model such as ChatGPT 5.4 Pro, that is being asked to review the project as a whole.
+This brief is meant for an external technical reviewer, especially a frontier reasoning model with long-context code-audit capability, that is being asked to review the project as a whole.
 
 The goal is to make the project understandable without requiring the reviewer to reverse-engineer the repository from scratch.
 
@@ -450,14 +450,17 @@ If the reviewer does not want to read the whole repo, these are the best startin
 
 ---
 
-## 15. Suggested prompt for ChatGPT 5.4 Pro
+## 15. Suggested prompt for a frontier reasoning model
 
 You can paste something close to this:
 
 ```text
 Please review this project architecture as a safety-critical offline document redaction tool.
 
-Read these two briefs first:
+Read this compact context first:
+- docs/review/agent-context.compact.md
+
+Then read these two briefs as needed:
 - docs/review/project-review-brief.md
 - docs/review/rule-engine-review-brief.md
 
@@ -471,8 +474,16 @@ Focus on:
 5. test gaps,
 6. rule-engine design risks, especially around normalization, dedup, language filtering, heuristics, and regex safety.
 
-Prioritize concrete findings with file references and explain why they matter.
-If something is a tradeoff rather than a bug, say so explicitly.
+Every finding must use this schema:
+- severity: P0 | P1 | P2
+- dimension: correctness | safety | architecture | performance | prompt | docs
+- evidence: file:line
+- problem
+- impact
+- proposed_fix
+- tests_to_add
+
+Do not include praise or generic observations. If something is a tradeoff rather than a bug, say so explicitly. If a claim has no file/line evidence, put it under assumptions instead of findings.
 ```
 
 ---
@@ -481,9 +492,9 @@ If something is a tradeoff rather than a bug, say so explicitly.
 
 At the time this brief was written:
 
-- package version: `1.1.0`
+- package version: `1.1.1`
 - build artifact: single-file `document-redactor.html`
-- current checked build size: `248 KB`
-- test suite scale: `1,700+` tests
+- current checked build size: `256 KB`
+- test suite scale: `1,788` tests
 
 This brief is intentionally architecture-focused rather than commit-specific.
