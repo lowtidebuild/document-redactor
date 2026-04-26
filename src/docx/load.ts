@@ -16,6 +16,20 @@ export class EntryTooLargeError extends Error {
   }
 }
 
+export class CorruptDocxError extends Error {
+  constructor() {
+    super("File is not a readable ZIP/DOCX package");
+    this.name = "CorruptDocxError";
+  }
+}
+
+export class InvalidDocxError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidDocxError";
+  }
+}
+
 export async function loadDocxZip(bytes: Uint8Array): Promise<JSZip> {
   if (bytes.length === 0) {
     throw new FileTooLargeError(0, MAX_INPUT_BYTES);
@@ -23,7 +37,14 @@ export async function loadDocxZip(bytes: Uint8Array): Promise<JSZip> {
   if (bytes.length > MAX_INPUT_BYTES) {
     throw new FileTooLargeError(bytes.length, MAX_INPUT_BYTES);
   }
-  return JSZip.loadAsync(bytes.slice());
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(bytes.slice());
+  } catch {
+    throw new CorruptDocxError();
+  }
+  validateDocxPackage(zip);
+  return zip;
 }
 
 export async function readZipEntry(
@@ -39,4 +60,17 @@ export async function readZipEntry(
     throw new EntryTooLargeError(path, content.length, MAX_ENTRY_BYTES);
   }
   return content;
+}
+
+function validateDocxPackage(zip: JSZip): void {
+  if (zip.file("[Content_Types].xml") === null) {
+    throw new InvalidDocxError(
+      'Unsupported DOCX package: missing "[Content_Types].xml"',
+    );
+  }
+  if (zip.file("word/document.xml") === null) {
+    throw new InvalidDocxError(
+      'Unsupported DOCX package: missing "word/document.xml"',
+    );
+  }
 }

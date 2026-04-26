@@ -1,6 +1,6 @@
 # Agent Context Compact — document-redactor
 
-Last synced with local commit: `7ba4cb4`
+Last synced with local commit: `9cbb988`
 
 Use this as the first context packet for external engineering review. Open longer docs only when a finding needs detail.
 
@@ -24,6 +24,7 @@ Hard constraints:
 - DOCX scopes include body, headers, footers, footnotes, endnotes, comments, and relationship targets.
 - `.rels` processing strips external `http://` / `https://` targets and repairs selected literals found in relationship targets.
 - `downloadRisk` requires explicit acknowledgement and must not be presented as verified clean.
+- CI runs a short ReDoS smoke gate; local full tests still run the deep ReDoS guard.
 
 ## Core Pipeline
 

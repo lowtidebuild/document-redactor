@@ -15,7 +15,9 @@
     "spike:jszip": "bun spike/jszip-spike.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:redos:smoke": "REDOS_GUARD_MODE=smoke vitest run src/detection/_framework/redos-guard.test.ts",
+    "test:redos:deep": "REDOS_GUARD_MODE=deep vitest run src/detection/_framework/redos-guard.test.ts"
   },
   "dependencies": {
     "docx": "^9.5.0",

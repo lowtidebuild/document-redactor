@@ -342,7 +342,7 @@ open dist/document-redactor.html
 Notes:
 
 - For browser QA, test the built `dist/document-redactor.html`, not the dev server.
-- The repository currently carries 1,712 automated tests across detection, DOCX rewriting, verification, UI state, and ship gates.
+- The repository currently carries 1,800+ automated tests across detection, DOCX rewriting, verification, UI state, and ship gates.
 - `dist/` is ignored in git; releases should publish the built HTML and its `.sha256` sidecar from CI or from a verified local build.
 
 ## License

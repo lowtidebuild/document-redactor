@@ -111,4 +111,12 @@ describe("documentation stale guards", () => {
     expect(compact).toContain("local policy JSON import/export");
     expect(projectBrief).toContain("src/ui/policy-file.ts");
   });
+
+  it("keeps the ReDoS smoke gate wired into CI", () => {
+    const packageJson = readDoc("package.json");
+    const ci = readDoc(".github/workflows/ci.yml");
+
+    expect(packageJson).toContain("test:redos:smoke");
+    expect(ci).toContain("bun run test:redos:smoke");
+  });
 });
