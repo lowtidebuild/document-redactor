@@ -193,7 +193,7 @@ export const ENTITIES = [
     category: "entities",
     subcategory: "ko-phone-context",
     pattern:
-      /(?<=(?:전화번호|전화|연락처|휴대전화|휴대폰|핸드폰|팩스번호|팩스|Fax|Tel)\s*[:：]?\s*)[+\d(][+\d .()\-]{6,24}(?=$|\n|;|[^\d+ .()\-])/g,
+      /(?<=(?:전화번호|전화|연락처|휴대전화|휴대폰|핸드폰|팩스번호|팩스|Fax|Tel)\s{0,8}[:：]?\s{0,8})[+\d(][+\d .()\-]{6,24}(?=$|\n|;|[^\d+ .()\-])/g,
     levels: ["standard", "paranoid"],
     languages: ["ko"],
     description:
