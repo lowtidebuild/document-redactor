@@ -5,6 +5,7 @@ import {
   collectVerifySurfaces,
   type VerifySurfaces,
 } from "../docx/verify-surfaces.js";
+import type { Scope } from "../docx/types.js";
 import type { ResolvedRedactionTarget } from "../selection-targets.js";
 
 export interface PreflightExpansionSummary {
@@ -51,6 +52,7 @@ export function buildPreflightExpansionPlanFromSurfaces(
   }
 
   const extraLiterals = new Map<string, Set<string>>();
+  const extraScopes = new Map<string, Map<string, Scope>>();
   const relsRepairs = new Map<string, Set<string>>();
   const touchedScopePaths = new Set<string>();
   let touchedNonBodyScope = false;
@@ -59,6 +61,10 @@ export function buildPreflightExpansionPlanFromSurfaces(
 
   for (const target of selectedTargets) {
     extraLiterals.set(target.id, new Set(target.redactionLiterals));
+    extraScopes.set(
+      target.id,
+      new Map(target.scopes.map((scope) => [scope.path, scope] as const)),
+    );
   }
 
   for (const surface of surfaces.scopeTextSurfaces) {
@@ -67,6 +73,7 @@ export function buildPreflightExpansionPlanFromSurfaces(
         if (!surface.text.includes(literal)) continue;
         const bucket = extraLiterals.get(target.id)!;
         bucket.add(literal);
+        addScope(extraScopes, target.id, surface.scope);
         touchedScopePaths.add(surface.scope.path);
         if (surface.scope.kind !== "body") {
           touchedNonBodyScope = true;
@@ -81,6 +88,7 @@ export function buildPreflightExpansionPlanFromSurfaces(
         if (!surface.text.includes(literal)) continue;
         const bucket = extraLiterals.get(target.id)!;
         bucket.add(literal);
+        addScope(extraScopes, target.id, surface.scope);
         touchedScopePaths.add(surface.scope.path);
         touchedFieldSurface = true;
         if (surface.scope.kind !== "body") {
@@ -109,11 +117,13 @@ export function buildPreflightExpansionPlanFromSurfaces(
   let expandedLiteralCount = 0;
   const targets = selectedTargets.map((target) => {
     const merged = sortLongestFirstUnique(extraLiterals.get(target.id) ?? []);
+    const scopes = [...(extraScopes.get(target.id)?.values() ?? target.scopes)];
     expandedLiteralCount += Math.max(0, merged.length - target.redactionLiterals.length);
     return {
       ...target,
       redactionLiterals: merged,
       verificationLiterals: merged,
+      scopes,
     };
   });
 
@@ -132,6 +142,16 @@ export function buildPreflightExpansionPlanFromSurfaces(
       expandedLiteralCount,
     },
   };
+}
+
+function addScope(
+  scopesByTargetId: Map<string, Map<string, Scope>>,
+  targetId: string,
+  scope: Scope,
+): void {
+  const scopes = scopesByTargetId.get(targetId) ?? new Map<string, Scope>();
+  scopes.set(scope.path, scope);
+  scopesByTargetId.set(targetId, scopes);
 }
 
 export async function applyRelsRepairsToZip(

@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import JSZip from "jszip";
 
-import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
+import {
+  buildResolvedTargetsFromStrings,
+  type ResolvedRedactionTarget,
+} from "../selection-targets.js";
 import { verifyRedaction } from "./verify.js";
 import type { Scope } from "./types.js";
 
@@ -22,6 +25,20 @@ function bodyWith(text: string): string {
 
 function resolved(...texts: string[]) {
   return buildResolvedTargetsFromStrings(texts);
+}
+
+function resolvedTarget(
+  id: string,
+  displayText: string,
+  verificationLiterals: readonly string[],
+): ResolvedRedactionTarget {
+  return {
+    id,
+    displayText,
+    redactionLiterals: verificationLiterals,
+    verificationLiterals,
+    scopes: [],
+  };
 }
 
 describe("verifyRedaction", () => {
@@ -117,6 +134,43 @@ describe("verifyRedaction", () => {
     expect(result.survived[0]!.count).toBe(1);
   });
 
+  it("counts a shared verification literal once while reporting each target", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("Common Name survived"),
+    });
+    const result = await verifyRedaction(zip, [
+      resolvedTarget("auto:common", "Common Name", ["Common Name"]),
+      resolvedTarget("manual:alias", "Manually added alias", ["Common Name"]),
+    ]);
+
+    expect(result.stringsTested).toBe(1);
+    expect(result.survived).toHaveLength(2);
+    expect(result.survived.map((survivor) => survivor.targetId)).toEqual([
+      "auto:common",
+      "manual:alias",
+    ]);
+    expect(result.survived[1]).toEqual(
+      expect.objectContaining({
+        text: "Manually added alias",
+        matchedLiteral: "Common Name",
+        count: 1,
+      }),
+    );
+  });
+
+  it("dedupes repeated verification literals within one target", async () => {
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyWith("ABC"),
+    });
+    const result = await verifyRedaction(zip, [
+      resolvedTarget("auto:abc", "ABC", ["ABC", "ABC", ""]),
+    ]);
+
+    expect(result.stringsTested).toBe(1);
+    expect(result.survived).toHaveLength(1);
+    expect(result.survived[0]!.count).toBe(1);
+  });
+
   it("ignores empty target strings", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("hello"),
@@ -160,9 +214,9 @@ describe("verifyRedaction", () => {
   it("detects a survived URL in word/_rels/document.xml.rels", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyWith("[REDACTED]"),
-      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId1" Type="hyperlink" Target="mailto:contact@pearlabyss.com" TargetMode="External"/></Relationships>`,
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId1" Type="hyperlink" Target="mailto:contact@example.invalid" TargetMode="External"/></Relationships>`,
     });
-    const result = await verifyRedaction(zip, resolved("contact@pearlabyss.com"));
+    const result = await verifyRedaction(zip, resolved("contact@example.invalid"));
     expect(result.isClean).toBe(false);
     expect(result.survived).toHaveLength(1);
     expect((result.survived[0]!.scope as { kind: string }).kind).toBe("rels");
@@ -174,7 +228,7 @@ describe("verifyRedaction", () => {
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"></Relationships>`,
     });
-    const result = await verifyRedaction(zip, resolved("contact@pearlabyss.com"));
+    const result = await verifyRedaction(zip, resolved("contact@example.invalid"));
     expect(result.isClean).toBe(true);
     expect(result.survived).toEqual([]);
   });

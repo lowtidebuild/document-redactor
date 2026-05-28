@@ -5,8 +5,10 @@
   import type { Scope } from "../docx/types.js";
   import type { Analysis } from "./engine.js";
   import {
-    buildPreviewSegments,
-    type PreviewCandidate,
+    buildPreviewSegmentIndex,
+    resolvePreviewSegments,
+    type PreviewSegmentCandidate,
+    type PreviewSegmentIndex,
     type PreviewSegment,
   } from "./preview-segments.js";
   import { appState } from "./state.svelte.ts";
@@ -19,7 +21,7 @@
   type ParagraphView = {
     readonly key: string;
     readonly empty: boolean;
-    readonly segments: readonly PreviewSegment[];
+    readonly segmentIndex: PreviewSegmentIndex | null;
   };
 
   type ScopeView = {
@@ -41,10 +43,9 @@
           a.displayText.localeCompare(b.displayText),
       )
       .map(
-        (target): PreviewCandidate => ({
+        (target): PreviewSegmentCandidate => ({
           selectionTargetId: target.id,
           text: target.displayText,
-          selected: appState.selections.has(target.id),
         }),
       ),
   );
@@ -57,10 +58,10 @@
       paragraphs: scope.paragraphs.map((paragraph): ParagraphView => ({
         key: `${scopeIndex}-${paragraph.scopeIndex}`,
         empty: paragraph.text.length === 0,
-        segments:
+        segmentIndex:
           paragraph.text.length === 0
-            ? []
-            : buildPreviewSegments(
+            ? null
+            : buildPreviewSegmentIndex(
                 paragraph.text,
                 allCandidates,
                 scopeIndex,
@@ -126,6 +127,11 @@
   function cssEscape(text: string): string {
     return text.replace(/["\\]/g, "\\$&");
   }
+
+  function segmentsFor(paragraph: ParagraphView): readonly PreviewSegment[] {
+    if (paragraph.segmentIndex === null) return [];
+    return resolvePreviewSegments(paragraph.segmentIndex, appState.selections);
+  }
 </script>
 
 <div class="doc-body" bind:this={containerRef}>
@@ -140,7 +146,7 @@
             <p class="para empty">&nbsp;</p>
           {:else}
             <p class="para">
-              {#each paragraph.segments as segment (segment.key)}
+              {#each segmentsFor(paragraph) as segment (segment.key)}
                 {#if segment.type === "text"}
                   {segment.text}
                 {:else}

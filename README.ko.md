@@ -13,7 +13,7 @@
         <img alt="document-redactor.html 다운로드" src="https://img.shields.io/badge/document--redactor.html-%EC%B5%9C%EC%8B%A0%20%EB%B0%9B%EA%B8%B0-0f766e?style=for-the-badge&logo=html5&logoColor=white" />
       </a>
       <br />
-      <sub>HTML 한 파일 · ~262 KB · 더블클릭으로 실행</sub>
+      <sub>HTML 한 파일 · ~266 KB · 더블클릭으로 실행</sub>
     </td>
     <td align="center" valign="middle">
       <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html.sha256">
@@ -53,7 +53,7 @@
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lowtidebuild/document-redactor/ci.yml?branch=main&label=CI&style=flat-square" />
   <img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-0f172a?style=flat-square" />
   <img alt="single HTML distribution" src="https://img.shields.io/badge/distribution-single%20HTML-0f172a?style=flat-square" />
-  <img alt="262 KB artifact" src="https://img.shields.io/badge/current%20build-262%20KB-166534?style=flat-square" />
+  <img alt="266 KB artifact" src="https://img.shields.io/badge/current%20build-266%20KB-166534?style=flat-square" />
   <img alt="zero network requests" src="https://img.shields.io/badge/network-0%20requests-166534?style=flat-square" />
   <img alt="rule-based engine" src="https://img.shields.io/badge/detection-rule--based-1d4ed8?style=flat-square" />
   <img alt="AI none" src="https://img.shields.io/badge/AI-none-7f1d1d?style=flat-square" />
@@ -155,8 +155,8 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>현재 확인된 크기</strong><br />
-      262 KB<br />
-      <small>268,571 bytes</small>
+      266 KB<br />
+      <small>271,869 bytes</small>
     </td>
     <td width="20%" valign="top">
       <strong>무결성 sidecar</strong><br />
@@ -168,15 +168,16 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>자동화 테스트</strong><br />
-      1,700+ tests
+      1,800+ tests
     </td>
   </tr>
 </table>
 
-2026년 4월 30일 기준으로 확인한 현재 빌드:
+2026년 5월 28일 기준으로 확인한 현재 빌드:
 
-- `document-redactor.html` SHA-256: `363d7c93008038a6e56137ab0a43251771f8911c7d7aad6e21cd6771a6a8003a`
+- `document-redactor.html` SHA-256: `b73f08f3174b3b50675c66362669ce9cb46e67db5a5934aad9f5127f008758cb`
 - `shasum -a 256 -c document-redactor.html.sha256` 로 로컬 검증 완료
+- 릴리즈 노트: [v1.3.0](release-notes/v1.3.0.md)
 
 ## 현재 릴리즈가 실제로 하는 일
 
@@ -192,17 +193,17 @@ flowchart TD
     </td>
     <td width="33%" valign="top">
       <strong>검증 기반 export</strong><br />
-      생성된 결과물을 다시 검사하고, residual survivor를 명확히 보여주며, verified-clean 다운로드와 warning 상태를 분리해 보여줍니다.
+      생성된 결과물을 다시 검사하고, 반복 리터럴을 중복 제거한 뒤 스캔하며, verified-clean 다운로드와 warning 상태를 분리해 보여줍니다.
     </td>
   </tr>
   <tr>
     <td width="33%" valign="top">
       <strong>인라인 프리뷰</strong><br />
-      문서 텍스트 안에서 선택 상태를 보며 검토할 수 있어서, 맥락 없는 리스트 검토보다 훨씬 안전합니다.
+      인덱싱된 하이라이트 위에서 선택 상태를 볼 수 있어, 토글할 때마다 매치 검색을 반복하지 않고 맥락 안에서 검토합니다.
     </td>
     <td width="33%" valign="top">
       <strong>OOXML leak hardening</strong><br />
-      필드와 hyperlink 구조를 평탄화하고, comments와 metadata를 제거하며, split run 전반에 일관된 redaction을 적용합니다.
+      필드와 hyperlink 구조를 평탄화하고, comments와 metadata를 제거하며, scope 힌트와 full fallback을 함께 사용해 redaction을 적용합니다.
     </td>
     <td width="33%" valign="top">
       <strong>수동 복구 경로</strong><br />
@@ -317,7 +318,7 @@ shasum -a 256 -c document-redactor.html.sha256
 - 릴리즈 산출물: `document-redactor.html`
 - 무결성 파일: `document-redactor.html.sha256`
 
-내부 phase brief와 planning note는 앞으로 공개 git surface에서 제외하는 방향으로 정리하고 있습니다.
+제품 문서가 아닌 작업 메모는 릴리즈 산출물에 포함하지 않습니다.
 
 ## 알려진 제한사항
 
@@ -345,7 +346,7 @@ open dist/document-redactor.html
 참고:
 
 - 브라우저 QA는 dev server가 아니라 빌드된 `dist/document-redactor.html` 기준으로 보는 게 맞습니다.
-- 저장소에는 detection, DOCX rewrite, verification, UI state, ship gate를 포괄하는 1,700+개의 자동화 테스트가 있습니다.
+- 저장소에는 detection, DOCX rewrite, verification, UI state, ship gate를 포괄하는 1,800+개의 자동화 테스트가 있습니다.
 - `dist/` 는 git에 올리지 않으므로, 릴리즈는 CI나 검증된 로컬 빌드에서 HTML과 `.sha256` 을 게시해야 합니다.
 
 ## 라이선스

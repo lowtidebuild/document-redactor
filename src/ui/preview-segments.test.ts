@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildPreviewSegmentIndex,
   buildPreviewSegments,
+  resolvePreviewSegments,
   type PreviewCandidate,
 } from "./preview-segments.js";
 
@@ -115,3 +117,113 @@ describe("buildPreviewSegments", () => {
     ]);
   });
 });
+
+describe("preview segment index", () => {
+  it("reuses one paragraph index across different selection states", () => {
+    const index = buildPreviewSegmentIndex(
+      "ABC Corp signed the agreement",
+      [
+        { selectionTargetId: "auto:abc", text: "ABC" },
+        { selectionTargetId: "auto:abc-corp", text: "ABC Corp" },
+      ],
+      0,
+      0,
+    );
+
+    const shortSelected = resolvePreviewSegments(index, new Set(["auto:abc"]));
+    const longSelected = resolvePreviewSegments(
+      index,
+      new Set(["auto:abc-corp"]),
+    );
+
+    expect(markOnly(shortSelected)).toEqual([
+      {
+        selectionTargetId: "auto:abc",
+        text: "ABC",
+        candidate: "ABC",
+        selected: true,
+      },
+    ]);
+    expect(markOnly(longSelected)).toEqual([
+      {
+        selectionTargetId: "auto:abc-corp",
+        text: "ABC Corp",
+        candidate: "ABC Corp",
+        selected: true,
+      },
+    ]);
+  });
+
+  it("updates selected state without rebuilding candidate matches", () => {
+    const index = buildPreviewSegmentIndex(
+      "ABC signed with Sunrise Ventures",
+      [
+        { selectionTargetId: "auto:abc", text: "ABC" },
+        { selectionTargetId: "auto:sunrise", text: "Sunrise" },
+      ],
+      0,
+      0,
+    );
+
+    const unchecked = resolvePreviewSegments(index, new Set());
+    const selected = resolvePreviewSegments(index, new Set(["auto:sunrise"]));
+
+    expect(markOnly(unchecked)).toEqual([
+      {
+        selectionTargetId: "auto:abc",
+        text: "ABC",
+        candidate: "ABC",
+        selected: false,
+      },
+      {
+        selectionTargetId: "auto:sunrise",
+        text: "Sunrise",
+        candidate: "Sunrise",
+        selected: false,
+      },
+    ]);
+    expect(markOnly(selected)).toEqual([
+      {
+        selectionTargetId: "auto:abc",
+        text: "ABC",
+        candidate: "ABC",
+        selected: false,
+      },
+      {
+        selectionTargetId: "auto:sunrise",
+        text: "Sunrise",
+        candidate: "Sunrise",
+        selected: true,
+      },
+    ]);
+  });
+
+  it("keeps normalized fallback matches in the reusable index", () => {
+    const index = buildPreviewSegmentIndex(
+      "A\u200BBC signed the agreement",
+      [{ selectionTargetId: "auto:abc", text: "ABC" }],
+      0,
+      0,
+    );
+
+    expect(markOnly(resolvePreviewSegments(index, new Set(["auto:abc"])))).toEqual([
+      {
+        selectionTargetId: "auto:abc",
+        text: "A\u200BBC",
+        candidate: "ABC",
+        selected: true,
+      },
+    ]);
+  });
+});
+
+function markOnly(segments: ReturnType<typeof buildPreviewSegments>) {
+  return segments
+    .filter((segment) => segment.type === "mark")
+    .map((segment) => ({
+      selectionTargetId: segment.selectionTargetId,
+      text: segment.text,
+      candidate: segment.candidate,
+      selected: segment.selected,
+    }));
+}

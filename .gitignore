@@ -30,13 +30,7 @@ __pycache__/
 *.pyc
 .venv/
 
-# ─────────────────────────────────────────────────
-# Internal design docs & build logs — NOT for public repo.
-# These live locally for author reference only.
-# See docs/superpowers/specs/2026-04-10-lane-f-2-release-automation-design.md
-# Appendix A for the pre-public transition checklist that removes these
-# from existing git history before making the repo public.
-# ─────────────────────────────────────────────────
+# Internal design docs & build logs. Keep author notes out of public git.
 brainstorm.md
 design-v1.md
 office-hours-*.md

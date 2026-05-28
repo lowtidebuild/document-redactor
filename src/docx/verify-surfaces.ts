@@ -95,7 +95,7 @@ export function extractRelationshipTargets(relsXml: string): readonly string[] {
   return out;
 }
 
-function listRelsPaths(zip: JSZip): string[] {
+export function listRelsPaths(zip: JSZip): string[] {
   const paths: string[] = [];
   zip.forEach((relativePath, file) => {
     if (file.dir) return;

@@ -29,7 +29,7 @@
 
 [최신 릴리즈](https://github.com/lowtidebuild/document-redactor/releases/latest) 페이지에서 **두 파일을 모두** 받으세요:
 
-- **`document-redactor.html`** — 도구 본체 (~262 KB / 268,571 bytes, HTML 한 파일)
+- **`document-redactor.html`** — 도구 본체 (~266 KB / 271,869 bytes, HTML 한 파일)
 - **`document-redactor.html.sha256`** — 무결성 sidecar (89 bytes)
 
 카카오톡, 이메일, USB 등으로 다른 사람에게 받은 경우에도 괜찮습니다. 다음 섹션의 검증이 바로 그런 경우를 위해 있습니다. 보낸 사람을 신뢰하는 대신 **해시를 검증** 하면 됩니다.
@@ -143,7 +143,7 @@ if ($actual -eq $expected) { "OK" } else { "MISMATCH — 실행하지 마세요"
 1. **track changes 평탄화** — 삭제된 hidden 텍스트 제거
 2. **comments 제거** — `word/comments.xml` 및 marker 삭제
 3. **필드 평탄화** — 하이퍼링크 unwrap, `<w:fldChar>` / `<w:instrText>` 제거
-4. **redact** — 선택된 모든 문자열을 `[REDACTED]` 로 교체 (모든 scope)
+4. **redact** — 자동 후보는 scope 힌트를 우선 사용하고, 수동/불명 항목은 full-scope fallback으로 `[REDACTED]` 치환
 5. **metadata scrub** — `docProps/*` 의 author, lastModifiedBy, company, title 비움
 6. **relationship target 정리** — `.rels` 파일의 외부 `http://` / `https://` target을 제거하고, 선택된 민감 문자열이 relationship target에 있으면 함께 치환
 7. **round-trip 검증** — 출력을 다시 파싱해서 생존 민감 문자열이 0 인지 확인 (`word/_rels/*.rels` relationship target 포함)
@@ -390,7 +390,7 @@ confidence < 1.0 인 휴리스틱 — 대문자 클러스터 (`Acme Holdings`), 
 | **Enter** / **Space** | 포커스된 행·하이라이트 토글 |
 | **Escape** | "+ 추가" 입력창 취소 (collapsible 섹션에서) |
 
-v1.1 의 전체 단축키입니다.
+현재 단축키 전체입니다.
 
 ---
 
@@ -433,7 +433,7 @@ shasum -a 256 NDA_2026_final.redacted.docx
 
 ### "도구가 느리다"
 
-50 KB 계약서 기준 총 2초 이내. >10초면 DevTools Performance 로 profile → fixture 크기 포함 버그 제보.
+50 KB 계약서 기준 총 2초 이내입니다. 현재 릴리즈는 프리뷰 검색 반복, redaction matcher 재생성, verification 리터럴 중복, DOCX scope artifact 재수집을 줄였습니다. >10초면 DevTools Performance 로 profile → fixture 크기 포함 버그 제보.
 
 ### "큰 파일을 드롭했더니 거부됨"
 
@@ -493,4 +493,4 @@ redact 할 때: 드롭한 바이트, 토글한 선택, 입력한 수동 항목, 
 
 ---
 
-_v1.1 전체 가이드입니다. 아키텍처는 [README](README.ko.md), 감지 규칙 내부는 [docs/RULES_GUIDE.md](docs/RULES_GUIDE.md), 버그·기능 요청은 [GitHub Issues](https://github.com/lowtidebuild/document-redactor/issues)._
+_현재 전체 가이드입니다. 아키텍처는 [README](README.ko.md), 감지 규칙 내부는 [docs/RULES_GUIDE.md](docs/RULES_GUIDE.md), 버그·기능 요청은 [GitHub Issues](https://github.com/lowtidebuild/document-redactor/issues)._

@@ -71,10 +71,12 @@ export async function finalizeRedaction(
   // 2. Apply the redaction pipeline (Lane B). This mutates `zip` in place.
   const redactOptions: {
     targets: ReadonlyArray<string>;
+    redactionTargets: ReadonlyArray<ResolvedRedactionTarget>;
     verifyTargets: ReadonlyArray<ResolvedRedactionTarget>;
     placeholder?: string;
   } = {
     targets: flattenRedactionLiterals(options.targets),
+    redactionTargets: options.targets,
     verifyTargets: options.targets,
   };
   if (options.placeholder !== undefined) {

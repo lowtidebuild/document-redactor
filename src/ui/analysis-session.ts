@@ -1,15 +1,8 @@
-import type { ExtractedScopeText } from "../detection/extract-text.js";
-import { extractTextFromZip } from "../detection/extract-text.js";
 import { loadDocxZip } from "../docx/load.js";
-import {
-  renderDocumentBody,
-  type RenderedDocument,
-} from "../docx/render-body.js";
-import { listScopes } from "../docx/scopes.js";
-import {
-  collectVerifySurfaces,
-  type VerifySurfaces,
-} from "../docx/verify-surfaces.js";
+import type { RenderedDocument } from "../docx/render-body.js";
+import { collectScopeArtifacts } from "../docx/scope-artifacts.js";
+import type { VerifySurfaces } from "../docx/verify-surfaces.js";
+import type { ExtractedScopeText } from "../detection/extract-text.js";
 import type { Analysis, FileStats } from "./engine.js";
 
 export interface DocumentAnalysisSnapshot {
@@ -28,25 +21,18 @@ export async function createDocumentAnalysisSnapshot(
   bytes: Uint8Array,
 ): Promise<DocumentAnalysisSnapshot> {
   const zip = await loadDocxZip(bytes);
+  const artifacts = await collectScopeArtifacts(zip);
   const fileStats: FileStats = {
     sizeBytes: bytes.length,
-    scopeCount: listScopes(zip).length,
+    scopeCount: artifacts.scopes.length,
   };
-  const renderedDoc = renderDocumentBody(zip);
-  // Preview errors are rendered in the UI; analysis should still complete.
-  renderedDoc.catch(() => undefined);
-
-  const [scopedText, verifySurfaces] = await Promise.all([
-    extractTextFromZip(zip),
-    collectVerifySurfaces(zip),
-  ]);
 
   return {
     bytes,
     fileStats,
-    scopedText,
-    renderedDoc,
-    verifySurfaces,
+    scopedText: artifacts.scopedText,
+    renderedDoc: Promise.resolve(artifacts.renderedDoc),
+    verifySurfaces: artifacts.verifySurfaces,
   };
 }
 

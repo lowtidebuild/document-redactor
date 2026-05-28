@@ -12,10 +12,13 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  createRedactionMatcher,
   findRedactionMatches,
   redactParagraph,
+  redactParagraphWithMatcher,
   redactInstrText,
   redactScopeXml,
+  redactScopeXmlWithMatcher,
   DEFAULT_PLACEHOLDER,
 } from "./redact.js";
 
@@ -122,6 +125,40 @@ describe("findRedactionMatches", () => {
   });
 });
 
+describe("createRedactionMatcher", () => {
+  it("deduplicates targets, drops empty strings, and preserves longest-first matching", () => {
+    const matcher = createRedactionMatcher([
+      "ABC",
+      "",
+      "ABC",
+      "ABC Corp",
+    ]);
+
+    expect(matcher.isEmpty).toBe(false);
+    expect(matcher.targetCount).toBe(2);
+    expect(matcher.findMatches("ABC Corporation")[0]!.matched).toBe(
+      "ABC Corp",
+    );
+  });
+
+  it("resets state between repeated calls on the same matcher", () => {
+    const matcher = createRedactionMatcher(["ABC"]);
+
+    expect(matcher.findMatches("ABC and ABC")).toHaveLength(2);
+    expect(matcher.findMatches("ABC")).toEqual([
+      { start: 0, end: 3, matched: "ABC" },
+    ]);
+  });
+
+  it("returns an inert matcher when all targets are empty", () => {
+    const matcher = createRedactionMatcher(["", ""]);
+
+    expect(matcher.isEmpty).toBe(true);
+    expect(matcher.targetCount).toBe(0);
+    expect(matcher.findMatches("ABC")).toEqual([]);
+  });
+});
+
 // ────────────────────────────────────────────────────────────────────────
 // redactParagraph — single-run cases
 // ────────────────────────────────────────────────────────────────────────
@@ -176,6 +213,13 @@ describe("redactParagraph — single run", () => {
     const xml = p("hello ABC world");
     const out = redactParagraph(xml, ["ABC"], "***");
     expect(visibleText(out)).toBe("hello *** world");
+  });
+
+  it("accepts a precompiled matcher", () => {
+    const xml = p("hello ABC world");
+    const matcher = createRedactionMatcher(["ABC"]);
+    const out = redactParagraphWithMatcher(xml, matcher);
+    expect(visibleText(out)).toBe("hello [REDACTED] world");
   });
 });
 
@@ -341,10 +385,10 @@ describe("redactScopeXml", () => {
   });
 
   it("runs the instrText safety net after paragraph redaction", () => {
-    const xml = `<w:body>${p("contact@pearlabyss.com")}<w:instrText xml:space="preserve"> HYPERLINK "mailto:contact@pearlabyss.com" </w:instrText></w:body>`;
-    const out = redactScopeXml(xml, ["contact@pearlabyss.com"]);
+    const xml = `<w:body>${p("contact@example.invalid")}<w:instrText xml:space="preserve"> HYPERLINK "mailto:contact@example.invalid" </w:instrText></w:body>`;
+    const out = redactScopeXml(xml, ["contact@example.invalid"]);
     expect(out).toContain("[REDACTED]");
-    expect(out).not.toContain("contact@pearlabyss.com");
+    expect(out).not.toContain("contact@example.invalid");
   });
 
   it("is idempotent with the instrText safety net enabled", () => {
@@ -352,6 +396,15 @@ describe("redactScopeXml", () => {
     const once = redactScopeXml(xml, ["secret"]);
     const twice = redactScopeXml(once, ["secret"]);
     expect(twice).toBe(once);
+  });
+
+  it("accepts a precompiled matcher across visible text and instrText", () => {
+    const xml = `<w:body>${p("contact@example.invalid")}<w:instrText xml:space="preserve"> HYPERLINK "mailto:contact@example.invalid" </w:instrText></w:body>`;
+    const matcher = createRedactionMatcher(["contact@example.invalid"]);
+    const out = redactScopeXmlWithMatcher(xml, matcher);
+
+    expect(out).toContain("[REDACTED]");
+    expect(out).not.toContain("contact@example.invalid");
   });
 });
 
@@ -362,10 +415,10 @@ describe("redactInstrText", () => {
   });
 
   it("scrubs a single sensitive string from instrText content", () => {
-    const xml = `<w:instrText xml:space="preserve"> HYPERLINK "mailto:contact@pearlabyss.com" </w:instrText>`;
-    const out = redactInstrText(xml, ["contact@pearlabyss.com"]);
+    const xml = `<w:instrText xml:space="preserve"> HYPERLINK "mailto:contact@example.invalid" </w:instrText>`;
+    const out = redactInstrText(xml, ["contact@example.invalid"]);
     expect(out).toContain("[REDACTED]");
-    expect(out).not.toContain("contact@pearlabyss.com");
+    expect(out).not.toContain("contact@example.invalid");
   });
 
   it("scrubs multiple sensitive strings from the same instrText node", () => {
@@ -385,21 +438,21 @@ describe("redactInstrText", () => {
 
   it("preserves the XML unchanged when no target matches instrText", () => {
     const xml = `<w:instrText> AUTHOR </w:instrText>`;
-    expect(redactInstrText(xml, ["contact@pearlabyss.com"])).toBe(xml);
+    expect(redactInstrText(xml, ["contact@example.invalid"])).toBe(xml);
   });
 
   it("scrubs a fldSimple w:instr attribute with a plain sensitive string", () => {
-    const xml = `<w:fldSimple w:instr=" HYPERLINK mailto:contact@pearlabyss.com ">${runXml("contact@pearlabyss.com")}</w:fldSimple>`;
-    const out = redactInstrText(xml, ["contact@pearlabyss.com"]);
+    const xml = `<w:fldSimple w:instr=" HYPERLINK mailto:contact@example.invalid ">${runXml("contact@example.invalid")}</w:fldSimple>`;
+    const out = redactInstrText(xml, ["contact@example.invalid"]);
     expect(out).toContain(`w:instr=" HYPERLINK mailto:${DEFAULT_PLACEHOLDER} "`);
-    expect(out).toContain("contact@pearlabyss.com");
+    expect(out).toContain("contact@example.invalid");
   });
 
   it("scrubs an entity-encoded fldSimple w:instr attribute", () => {
-    const xml = `<w:fldSimple w:instr=" HYPERLINK &quot;mailto:contact@pearlabyss.com&quot; ">${runXml("contact@pearlabyss.com")}</w:fldSimple>`;
-    const out = redactInstrText(xml, [`"mailto:contact@pearlabyss.com"`]);
+    const xml = `<w:fldSimple w:instr=" HYPERLINK &quot;mailto:contact@example.invalid&quot; ">${runXml("contact@example.invalid")}</w:fldSimple>`;
+    const out = redactInstrText(xml, [`"mailto:contact@example.invalid"`]);
     expect(out).toContain(`w:instr=" HYPERLINK ${DEFAULT_PLACEHOLDER} "`);
-    expect(out).toContain("contact@pearlabyss.com");
+    expect(out).toContain("contact@example.invalid");
   });
 
   it("scrubs multiple fldSimple instruction attributes in one scope", () => {

@@ -27,7 +27,7 @@ A step-by-step walkthrough for running `document-redactor` on a real file. If yo
 
 Go to the [latest release](https://github.com/lowtidebuild/document-redactor/releases/latest) and download **both** files:
 
-- **`document-redactor.html`** — the tool itself (~262 KB / 268,571 bytes, single HTML file)
+- **`document-redactor.html`** — the tool itself (~266 KB / 271,869 bytes, single HTML file)
 - **`document-redactor.html.sha256`** — the integrity sidecar (89 bytes)
 
 If you received the files via Kakao, email, or USB from someone else, that's fine — the verification step in the next section is exactly designed for this case. You don't need to trust the sender; you need to verify the hash.
@@ -141,7 +141,7 @@ The tool runs the full pipeline:
 1. **Flatten track changes** — removes deleted-but-hidden text
 2. **Strip comments** — deletes `word/comments.xml` and markers
 3. **Flatten fields** — unwraps hyperlinks, removes `<w:fldChar>` / `<w:instrText>` (so `HYPERLINK "mailto:..."` instructions can't leak)
-4. **Redact** — replaces every selected string with `[REDACTED]` across all scopes
+4. **Redact** — replaces selected strings with `[REDACTED]`, using scope hints for automatic candidates and full-scope fallback for manual or unknown entries
 5. **Scrub metadata** — clears author, lastModifiedBy, company, title in `docProps/*`
 6. **Clean relationship targets** — strips external `http://` / `https://` targets in `.rels` files and repairs selected literals found in relationship targets
 7. **Round-trip verify** — re-parses the output and confirms zero surviving sensitive strings, including relationship targets in `word/_rels/*.rels`
@@ -392,7 +392,7 @@ Practical example — redacting a judgment excerpt:
 | **Enter** / **Space** | Toggle selection on a focused row or highlight |
 | **Escape** | Cancel an open "+ 추가" input (in sections where it's collapsible) |
 
-That's the full v1.1 shortcut list. More may arrive later — follow releases.
+That's the current shortcut list. More may arrive later — follow releases.
 
 ---
 
@@ -445,7 +445,7 @@ If you see a false positive, uncheck the row before Apply.
 
 ### "Verification still found survivors even though I checked everything"
 
-This is `downloadRisk` — a sensitive string survived even after preflight and the one automatic retry. The most common causes in v1.1:
+This is `downloadRisk` — a sensitive string survived even after preflight and the one automatic retry. The most common causes:
 
 - **The string is in `word/_rels/document.xml.rels`** as a hyperlink Target. The banner shows the rels path. Unwrapping hyperlinks removes the display text, but the URL in the rels file stays.
 - **Zero-width spaces or hyphen variants** in the source. The normalization layer handles most, but some exotic combinations can slip through.
@@ -462,7 +462,7 @@ Typical timings on a 50 KB contract:
 - Apply + verify: ~500 ms
 - Document preview render: <500 ms
 
-Total under 2 seconds end to end. If it's genuinely slow (>10 seconds), the most likely cause is a very large DOCX with thousands of paragraphs. Open DevTools Performance tab to profile. File a bug with the fixture size.
+Total under 2 seconds end to end. The current release avoids repeated preview searches, reuses redaction matchers, deduplicates verification literals, and reuses collected DOCX scope artifacts. If it's genuinely slow (>10 seconds), the most likely cause is a very large DOCX with thousands of paragraphs. Open DevTools Performance tab to profile. File a bug with the fixture size.
 
 ### "I dropped a large file and it was rejected"
 
@@ -496,7 +496,7 @@ If the redacted `.docx` output looks odd, it's a different issue — attach an i
 
 ## 13. What this tool does not do
 
-These are v1.1 limitations. Some are planned for future paranoid-tier work; others are intentional.
+These are current limitations. Some are planned for future paranoid-tier work; others are intentional.
 
 - **No OCR.** If your DOCX has images of text (scanned pages, screenshots), the text inside is invisible. Redact images in an editor before converting, or OCR separately.
 - **No handwritten signature images.** Same as OCR — pixels, not text.
@@ -532,4 +532,4 @@ If you observe any behavior that contradicts this statement, it is a bug, and it
 
 ---
 
-_That's the full v1.1 guide. For architecture rationale, see the [README](README.md). For detection rule internals, see [docs/RULES_GUIDE.md](docs/RULES_GUIDE.md). Bug reports and feature requests: [GitHub Issues](https://github.com/lowtidebuild/document-redactor/issues)._
+_That's the full current guide. For architecture rationale, see the [README](README.md). For detection rule internals, see [docs/RULES_GUIDE.md](docs/RULES_GUIDE.md). Bug reports and feature requests: [GitHub Issues](https://github.com/lowtidebuild/document-redactor/issues)._

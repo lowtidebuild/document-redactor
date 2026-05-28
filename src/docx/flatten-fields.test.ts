@@ -43,15 +43,15 @@ describe("flattenFields", () => {
   it("unwraps a simple field and preserves the inner display run", () => {
     const xml = body(
       paragraph(
-        `${run("이메일: ")}<w:fldSimple w:instr=" HYPERLINK &quot;mailto:contact@pearlabyss.com&quot; ">${run("contact@pearlabyss.com")}</w:fldSimple>`,
+        `${run("이메일: ")}<w:fldSimple w:instr=" HYPERLINK &quot;mailto:contact@example.invalid&quot; ">${run("contact@example.invalid")}</w:fldSimple>`,
       ),
     );
 
     const out = flattenFields(xml);
 
-    expect(out).toContain("contact@pearlabyss.com");
+    expect(out).toContain("contact@example.invalid");
     expect(out).not.toContain("<w:fldSimple");
-    expect(out).not.toContain("mailto:contact@pearlabyss.com");
+    expect(out).not.toContain("mailto:contact@example.invalid");
   });
 
   it("drops the simple-field wrapper even when there are multiple inner runs", () => {
@@ -98,24 +98,24 @@ describe("flattenFields", () => {
   it("drops the complex-field instrText run entirely", () => {
     const xml = body(
       paragraph(
-        `${fldCharRun("begin")}${runWithInstr(' HYPERLINK "mailto:contact@pearlabyss.com" ')}${fldCharRun("separate")}${run("contact@pearlabyss.com")}${fldCharRun("end")}`,
+        `${fldCharRun("begin")}${runWithInstr(' HYPERLINK "mailto:contact@example.invalid" ')}${fldCharRun("separate")}${run("contact@example.invalid")}${fldCharRun("end")}`,
       ),
     );
     const out = flattenFields(xml);
     expect(out).not.toContain("<w:instrText");
-    expect(out).not.toContain('mailto:contact@pearlabyss.com');
-    expect(out).toContain("contact@pearlabyss.com");
+    expect(out).not.toContain('mailto:contact@example.invalid');
+    expect(out).toContain("contact@example.invalid");
   });
 
   it("preserves the display portion of a complex field", () => {
     const xml = body(
       paragraph(
-        `${run("담당자: ")}${fldCharRun("begin")}${runWithInstr(' HYPERLINK "mailto:contact@pearlabyss.com" ')}${fldCharRun("separate")}${run("contact@pearlabyss.com")}${fldCharRun("end")}`,
+        `${run("담당자: ")}${fldCharRun("begin")}${runWithInstr(' HYPERLINK "mailto:contact@example.invalid" ')}${fldCharRun("separate")}${run("contact@example.invalid")}${fldCharRun("end")}`,
       ),
     );
     const out = flattenFields(xml);
     expect(out).toContain("담당자: ");
-    expect(out).toContain("contact@pearlabyss.com");
+    expect(out).toContain("contact@example.invalid");
     expect(hasFieldMarkup(out)).toBe(false);
   });
 
@@ -142,11 +142,11 @@ describe("flattenFields", () => {
   it("unwraps a hyperlink and keeps the inner run", () => {
     const xml = body(
       paragraph(
-        `${run("문의: ")}<w:hyperlink r:id="rId5" w:history="1">${run("contact@pearlabyss.com")}</w:hyperlink>`,
+        `${run("문의: ")}<w:hyperlink r:id="rId5" w:history="1">${run("contact@example.invalid")}</w:hyperlink>`,
       ),
     );
     const out = flattenFields(xml);
-    expect(out).toContain("contact@pearlabyss.com");
+    expect(out).toContain("contact@example.invalid");
     expect(out).not.toContain("<w:hyperlink");
     expect(out).not.toContain('r:id="rId5"');
   });

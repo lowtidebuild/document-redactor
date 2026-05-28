@@ -77,15 +77,15 @@ describe("selection-targets", () => {
     const targets = buildSelectionTargets([
       {
         scope: scope("body", "word/document.xml"),
-        text: "Pearl Abyss",
-        normalizedText: "Pearl Abyss",
+        text: "Example Labs",
+        normalizedText: "Example Labs",
         ruleId: "entities.en-corp-suffix",
         sourceKind: "nonPii",
       },
       {
         scope: null,
-        text: "Pearl Abyss",
-        normalizedText: "Pearl Abyss",
+        text: "Example Labs",
+        normalizedText: "Example Labs",
         ruleId: null,
         sourceKind: "manual",
       },
@@ -156,8 +156,8 @@ describe("selection-targets", () => {
       },
       {
         scope: scope("body", "word/document.xml"),
-        text: "“Pearl Abyss”",
-        normalizedText: "\"Pearl Abyss\"",
+        text: "“Example Labs”",
+        normalizedText: "\"Example Labs\"",
         ruleId: "entities.en-corp-suffix",
         sourceKind: "nonPii",
       },
@@ -170,8 +170,8 @@ describe("selection-targets", () => {
 
     expect(resolved[0]!.redactionLiterals).not.toContain("010-1234-5678");
     expect(resolved[0]!.redactionLiterals).toContain("０１０–1234–5678");
-    expect(resolved[1]!.redactionLiterals).toContain("“Pearl Abyss”");
-    expect(resolved[1]!.verificationLiterals).not.toContain("\"Pearl Abyss\"");
+    expect(resolved[1]!.redactionLiterals).toContain("“Example Labs”");
+    expect(resolved[1]!.verificationLiterals).not.toContain("\"Example Labs\"");
   });
 
   it("adds original document slices to manual targets matched by normalization", () => {
@@ -191,17 +191,17 @@ describe("selection-targets", () => {
 
   it("adds smart-quote document slices to manual targets matched by normalization", () => {
     const target = buildManualSelectionTarget(
-      "\"Pearl Abyss\"",
+      "\"Example Labs\"",
       "entities",
-      "The agreement refers to “Pearl Abyss” throughout.",
+      "The agreement refers to “Example Labs” throughout.",
     );
 
     const [resolved] = resolveSelectedTargets([target], new Set([target.id]));
 
-    expect(target.literalVariants).toContain("\"Pearl Abyss\"");
-    expect(target.literalVariants).toContain("“Pearl Abyss”");
-    expect(resolved!.redactionLiterals).toContain("“Pearl Abyss”");
-    expect(resolved!.verificationLiterals).toContain("“Pearl Abyss”");
+    expect(target.literalVariants).toContain("\"Example Labs\"");
+    expect(target.literalVariants).toContain("“Example Labs”");
+    expect(resolved!.redactionLiterals).toContain("“Example Labs”");
+    expect(resolved!.verificationLiterals).toContain("“Example Labs”");
   });
 
   it("keeps manual targets literal-only when no normalized corpus match exists", () => {

@@ -36,7 +36,12 @@ import {
 } from "../selection-targets.js";
 import { flattenFieldsInZip } from "./flatten-fields.js";
 import { flattenTrackChanges } from "./flatten-track-changes.js";
-import { redactScopeXml, DEFAULT_PLACEHOLDER } from "./redact.js";
+import {
+  createRedactionMatcher,
+  redactScopeXmlWithMatcher,
+  DEFAULT_PLACEHOLDER,
+  type RedactionMatcher,
+} from "./redact.js";
 import { listScopes, readScopeXml } from "./scopes.js";
 import {
   dropCommentsPart,
@@ -54,6 +59,11 @@ export interface RedactDocxOptions {
    * orchestrator does not produce or filter this list.
    */
   readonly targets: ReadonlyArray<string>;
+  /**
+   * Structured redaction payload with scope hints. When omitted, or when any
+   * target lacks scopes, redaction keeps the historical full-scope behavior.
+   */
+  readonly redactionTargets?: ReadonlyArray<ResolvedRedactionTarget>;
   /** Structured verification payload. Defaults to wrapping `targets` 1:1. */
   readonly verifyTargets?: ReadonlyArray<ResolvedRedactionTarget>;
   /**
@@ -79,6 +89,13 @@ export interface RedactionReport {
   readonly verify: VerifyResult;
 }
 
+type RedactionScopePlan =
+  | { readonly kind: "full"; readonly matcher: RedactionMatcher }
+  | {
+      readonly kind: "scoped";
+      readonly matchersByScopePath: ReadonlyMap<string, RedactionMatcher>;
+    };
+
 /**
  * Run the full redaction pipeline against a loaded DOCX zip in place.
  * The caller is responsible for loading bytes into the zip beforehand
@@ -95,6 +112,10 @@ export async function redactDocx(
 ): Promise<RedactionReport> {
   const placeholder = options.placeholder ?? DEFAULT_PLACEHOLDER;
   const targets = options.targets;
+  const redactionPlan = buildRedactionScopePlan(
+    targets,
+    options.redactionTargets,
+  );
 
   // Step 1–2: walk text-bearing scopes (excluding the comments file itself,
   // which we delete entirely later) and flatten track changes + comment refs.
@@ -120,7 +141,11 @@ export async function redactDocx(
   // Step 4: redact each text-bearing scope after the XML has been flattened.
   for (const scope of textScopes) {
     const xml = await readScopeXml(zip, scope);
-    const redacted = redactScopeXml(xml, targets, placeholder);
+    const scopeMatcher = matcherForScope(redactionPlan, scope);
+    const redacted =
+      scopeMatcher === null
+        ? xml
+        : redactScopeXmlWithMatcher(xml, scopeMatcher, placeholder);
     zip.file(scope.path, redacted);
     scopeMutations.push({
       scope,
@@ -140,4 +165,64 @@ export async function redactDocx(
   );
 
   return { scopeMutations, verify };
+}
+
+function buildRedactionScopePlan(
+  targets: ReadonlyArray<string>,
+  redactionTargets: ReadonlyArray<ResolvedRedactionTarget> | undefined,
+): RedactionScopePlan {
+  if (redactionTargets === undefined) {
+    return fullRedactionScopePlan(targets);
+  }
+
+  if (redactionTargets.some((target) => target.scopes.length === 0)) {
+    return fullRedactionScopePlan(targets);
+  }
+
+  const requestedLiterals = new Set(targets.filter((literal) => literal.length > 0));
+  const scopedLiterals = new Set(
+    redactionTargets.flatMap((target) =>
+      target.redactionLiterals.filter((literal) => literal.length > 0),
+    ),
+  );
+  if ([...requestedLiterals].some((literal) => !scopedLiterals.has(literal))) {
+    return fullRedactionScopePlan(targets);
+  }
+
+  const literalsByScopePath = new Map<string, Set<string>>();
+  for (const target of redactionTargets) {
+    for (const scope of target.scopes) {
+      const literals = literalsByScopePath.get(scope.path) ?? new Set<string>();
+      for (const literal of target.redactionLiterals) {
+        if (literal.length > 0) {
+          literals.add(literal);
+        }
+      }
+      literalsByScopePath.set(scope.path, literals);
+    }
+  }
+
+  return {
+    kind: "scoped",
+    matchersByScopePath: new Map(
+      [...literalsByScopePath.entries()].map(([path, literals]) => [
+        path,
+        createRedactionMatcher([...literals]),
+      ]),
+    ),
+  };
+}
+
+function fullRedactionScopePlan(
+  targets: ReadonlyArray<string>,
+): RedactionScopePlan {
+  return { kind: "full", matcher: createRedactionMatcher(targets) };
+}
+
+function matcherForScope(
+  plan: RedactionScopePlan,
+  scope: Scope,
+): RedactionMatcher | null {
+  if (plan.kind === "full") return plan.matcher;
+  return plan.matchersByScopePath.get(scope.path) ?? null;
 }

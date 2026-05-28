@@ -6,10 +6,10 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
-const CURRENT_BUILD_SIZE = "262 KB";
-const CURRENT_BUILD_BYTES = "268,571 bytes";
+const CURRENT_BUILD_SIZE = "266 KB";
+const CURRENT_BUILD_BYTES = "271,869 bytes";
 const CURRENT_BUILD_SHA256 =
-  "363d7c93008038a6e56137ab0a43251771f8911c7d7aad6e21cd6771a6a8003a";
+  "b73f08f3174b3b50675c66362669ce9cb46e67db5a5934aad9f5127f008758cb";
 
 function readDoc(relativePath: string): string {
   return fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");

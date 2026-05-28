@@ -18,7 +18,10 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll } from "vitest";
 import JSZip from "jszip";
 
-import { buildResolvedTargetsFromStrings } from "../selection-targets.js";
+import {
+  buildResolvedTargetsFromStrings,
+  type ResolvedRedactionTarget,
+} from "../selection-targets.js";
 import { redactDocx } from "./redact-docx.js";
 import { listScopes, readScopeXml } from "./scopes.js";
 import { hasTrackChanges } from "./flatten-track-changes.js";
@@ -89,6 +92,20 @@ function instrRunXml(text: string): string {
 
 function fldCharRun(kind: "begin" | "separate" | "end"): string {
   return `<w:r><w:fldChar w:fldCharType="${kind}"/></w:r>`;
+}
+
+function scopedTarget(
+  id: string,
+  text: string,
+  scopes: ResolvedRedactionTarget["scopes"],
+): ResolvedRedactionTarget {
+  return {
+    id,
+    displayText: text,
+    redactionLiterals: [text],
+    verificationLiterals: [text],
+    scopes,
+  };
 }
 
 describe("redactDocx — integration against the worst-case bilingual fixture", () => {
@@ -254,68 +271,68 @@ describe("redactDocx — Phase 4 field/hyperlink integration", () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyXml(
         paragraphXml(
-          `${runXml("담당자: ")}${fldCharRun("begin")}${instrRunXml(' HYPERLINK "mailto:contact@pearlabyss.com" ')}${fldCharRun("separate")}${runXml("contact@pearlabyss.com")}${fldCharRun("end")}`,
+          `${runXml("담당자: ")}${fldCharRun("begin")}${instrRunXml(' HYPERLINK "mailto:contact@example.invalid" ')}${fldCharRun("separate")}${runXml("contact@example.invalid")}${fldCharRun("end")}`,
         ),
       ),
     });
 
-    await redactDocx(zip, { targets: ["contact@pearlabyss.com"] });
+    await redactDocx(zip, { targets: ["contact@example.invalid"] });
 
     const xml = await zip.file("word/document.xml")!.async("string");
     expect(xml).toContain("[REDACTED]");
     expect(xml).not.toContain("<w:instrText");
-    expect(xml).not.toContain("contact@pearlabyss.com");
+    expect(xml).not.toContain("contact@example.invalid");
   });
 
   it("removes simple-field instruction attributes from document.xml during the pipeline", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyXml(
         paragraphXml(
-          `<w:fldSimple w:instr=" HYPERLINK &quot;mailto:contact@pearlabyss.com&quot; ">${runXml("contact@pearlabyss.com")}</w:fldSimple>`,
+          `<w:fldSimple w:instr=" HYPERLINK &quot;mailto:contact@example.invalid&quot; ">${runXml("contact@example.invalid")}</w:fldSimple>`,
         ),
       ),
     });
 
-    await redactDocx(zip, { targets: ["contact@pearlabyss.com"] });
+    await redactDocx(zip, { targets: ["contact@example.invalid"] });
 
     const xml = await zip.file("word/document.xml")!.async("string");
     expect(xml).toContain("[REDACTED]");
     expect(xml).not.toContain("<w:fldSimple");
-    expect(xml).not.toContain('mailto:contact@pearlabyss.com');
+    expect(xml).not.toContain('mailto:contact@example.invalid');
   });
 
   it("unwraps hyperlink display runs while leaving the orphaned rels entry untouched for later verification", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyXml(
         paragraphXml(
-          `<w:hyperlink r:id="rId5">${runXml("contact@pearlabyss.com")}</w:hyperlink>`,
+          `<w:hyperlink r:id="rId5">${runXml("contact@example.invalid")}</w:hyperlink>`,
         ),
       ),
-      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:contact@pearlabyss.com" TargetMode="External"/></Relationships>`,
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:contact@example.invalid" TargetMode="External"/></Relationships>`,
     });
 
-    await redactDocx(zip, { targets: ["contact@pearlabyss.com"] });
+    await redactDocx(zip, { targets: ["contact@example.invalid"] });
 
     const xml = await zip.file("word/document.xml")!.async("string");
     const rels = await zip.file("word/_rels/document.xml.rels")!.async("string");
 
     expect(xml).toContain("[REDACTED]");
     expect(xml).not.toContain("<w:hyperlink");
-    expect(rels).toContain("mailto:contact@pearlabyss.com");
+    expect(rels).toContain("mailto:contact@example.invalid");
   });
 
   it("flags the orphaned hyperlink rel as a verify failure end-to-end", async () => {
     const zip = await syntheticDocx({
       "word/document.xml": bodyXml(
         paragraphXml(
-          `<w:hyperlink r:id="rId5">${runXml("contact@pearlabyss.com")}</w:hyperlink>`,
+          `<w:hyperlink r:id="rId5">${runXml("contact@example.invalid")}</w:hyperlink>`,
         ),
       ),
-      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:contact@pearlabyss.com" TargetMode="External"/></Relationships>`,
+      "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:contact@example.invalid" TargetMode="External"/></Relationships>`,
     });
 
     const report = await redactDocx(zip, {
-      targets: ["contact@pearlabyss.com"],
+      targets: ["contact@example.invalid"],
     });
 
     expect(report.verify.isClean).toBe(false);
@@ -326,5 +343,80 @@ describe("redactDocx — Phase 4 field/hyperlink integration", () => {
     expect(report.verify.survived[0]!.scope.path).toBe(
       "word/_rels/document.xml.rels",
     );
+  });
+});
+
+describe("redactDocx — scoped redaction plan", () => {
+  it("redacts scoped automatic targets only in their known scopes", async () => {
+    const target = scopedTarget("auto:body-secret", "Body Secret", [
+      { kind: "body", path: "word/document.xml" },
+    ]);
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyXml(paragraphXml(runXml("Body Secret"))),
+      "word/header1.xml": `<w:hdr ${W_NS}>${paragraphXml(runXml("Header Secret"))}</w:hdr>`,
+    });
+
+    const report = await redactDocx(zip, {
+      targets: ["Body Secret"],
+      redactionTargets: [target],
+      verifyTargets: [target],
+    });
+
+    const body = await zip.file("word/document.xml")!.async("string");
+    const header = await zip.file("word/header1.xml")!.async("string");
+    expect(report.verify.isClean).toBe(true);
+    expect(body).toContain("[REDACTED]");
+    expect(body).not.toContain("Body Secret");
+    expect(header).toContain("Header Secret");
+  });
+
+  it("falls back to full-scope redaction when a target has no scope hints", async () => {
+    const target = scopedTarget("manual:shared-secret", "Shared Secret", []);
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyXml(paragraphXml(runXml("Shared Secret"))),
+      "word/header1.xml": `<w:hdr ${W_NS}>${paragraphXml(runXml("Shared Secret"))}</w:hdr>`,
+    });
+
+    const report = await redactDocx(zip, {
+      targets: ["Shared Secret"],
+      redactionTargets: [target],
+      verifyTargets: [target],
+    });
+
+    const body = await zip.file("word/document.xml")!.async("string");
+    const header = await zip.file("word/header1.xml")!.async("string");
+    expect(report.verify.isClean).toBe(true);
+    expect(body).not.toContain("Shared Secret");
+    expect(header).not.toContain("Shared Secret");
+  });
+
+  it("keeps verification full-scope when scoped redaction skips a survivor", async () => {
+    const target = scopedTarget("auto:scoped-secret", "Scoped Secret", [
+      { kind: "body", path: "word/document.xml" },
+    ]);
+    const zip = await syntheticDocx({
+      "word/document.xml": bodyXml(paragraphXml(runXml("Scoped Secret"))),
+      "word/header1.xml": `<w:hdr ${W_NS}>${paragraphXml(runXml("Scoped Secret"))}</w:hdr>`,
+    });
+
+    const report = await redactDocx(zip, {
+      targets: ["Scoped Secret"],
+      redactionTargets: [target],
+      verifyTargets: [target],
+    });
+
+    const body = await zip.file("word/document.xml")!.async("string");
+    const header = await zip.file("word/header1.xml")!.async("string");
+    expect(body).not.toContain("Scoped Secret");
+    expect(header).toContain("Scoped Secret");
+    expect(report.verify.isClean).toBe(false);
+    expect(report.verify.survived).toEqual([
+      expect.objectContaining({
+        targetId: "auto:scoped-secret",
+        scope: { kind: "header", path: "word/header1.xml" },
+        surface: "text",
+        count: 1,
+      }),
+    ]);
   });
 });

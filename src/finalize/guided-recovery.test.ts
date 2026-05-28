@@ -115,6 +115,10 @@ describe("guided-recovery", () => {
               ...selectedTargets[0],
               redactionLiterals: ["ABC Corporation", "ABC Corp"],
               verificationLiterals: ["ABC Corporation", "ABC Corp"],
+              scopes: [
+                { kind: "body", path: "word/document.xml" },
+                { kind: "header", path: "word/header1.xml" },
+              ],
             },
           ]);
           return makeReport({ verifyIsClean: true });
@@ -138,13 +142,13 @@ describe("guided-recovery", () => {
 
   it("classifies repaired leaks in rel targets as a clean warning state", async () => {
     const originalBytes = new Uint8Array([7, 7, 7]);
-    const selectedTargets = [makeResolvedTarget("contact@pearlabyss.com")];
+    const selectedTargets = [makeResolvedTarget("contact@example.invalid")];
     const pass1 = makeReport({
       verifyIsClean: false,
       survived: [
         {
-          targetId: "auto:contact@pearlabyss.com",
-          text: "contact@pearlabyss.com",
+          targetId: "auto:contact@example.invalid",
+          text: "contact@example.invalid",
           scope: {
             kind: "rels",
             path: "word/_rels/document.xml.rels",

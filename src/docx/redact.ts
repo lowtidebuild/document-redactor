@@ -22,6 +22,99 @@ export interface RedactionMatch {
   readonly matched: string;
 }
 
+export interface RedactionMatcher {
+  readonly isEmpty: boolean;
+  readonly targetCount: number;
+  findMatches(text: string): RedactionMatch[];
+  redactInstrText(
+    xml: string,
+    placeholder?: string,
+  ): string;
+}
+
+class CompiledRedactionMatcher implements RedactionMatcher {
+  private readonly sortedTargets: readonly string[];
+  private readonly pattern: RegExp | null;
+
+  constructor(targets: ReadonlyArray<string>) {
+    this.sortedTargets = [...new Set(targets.filter((t) => t.length > 0))].sort(
+      (a, b) => b.length - a.length,
+    );
+    this.pattern =
+      this.sortedTargets.length === 0
+        ? null
+        : new RegExp(this.sortedTargets.map(escapeRegex).join("|"), "g");
+  }
+
+  get isEmpty(): boolean {
+    return this.sortedTargets.length === 0;
+  }
+
+  get targetCount(): number {
+    return this.sortedTargets.length;
+  }
+
+  findMatches(text: string): RedactionMatch[] {
+    if (text.length === 0 || this.pattern === null) return [];
+
+    this.pattern.lastIndex = 0;
+    const matches: RedactionMatch[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = this.pattern.exec(text)) !== null) {
+      matches.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        matched: m[0],
+      });
+    }
+    this.pattern.lastIndex = 0;
+    return matches;
+  }
+
+  redactInstrText(
+    xml: string,
+    placeholder: string = DEFAULT_PLACEHOLDER,
+  ): string {
+    if (this.sortedTargets.length === 0) return xml;
+
+    let out = xml.replace(
+      /<w:instrText(?:\s[^>]*)?>([\s\S]*?)<\/w:instrText>/g,
+      (full, inner: string) => {
+        let redacted = inner;
+        for (const target of this.sortedTargets) {
+          redacted = redacted.split(target).join(placeholder);
+        }
+        if (redacted === inner) return full;
+        return full.replace(inner, redacted);
+      },
+    );
+
+    out = out.replace(
+      /(<w:fldSimple\s[^>]*?w:instr=")([^"]*)("[^>]*>)/g,
+      (full, open: string, instr: string, close: string) => {
+        let redacted = instr;
+        for (const target of this.sortedTargets) {
+          redacted = redacted.split(target).join(placeholder);
+          const encoded = target.replace(/"/g, "&quot;");
+          if (encoded !== target) {
+            redacted = redacted.split(encoded).join(placeholder);
+          }
+        }
+        if (redacted === instr) return full;
+        return `${open}${redacted}${close}`;
+      },
+    );
+
+    return out;
+  }
+}
+
+export function createRedactionMatcher(
+  targets: ReadonlyArray<string>,
+): RedactionMatcher {
+  return new CompiledRedactionMatcher(targets);
+}
+
 /**
  * Find every non-overlapping match of any target string in `text`.
  *
@@ -34,27 +127,7 @@ export function findRedactionMatches(
   text: string,
   targets: ReadonlyArray<string>,
 ): RedactionMatch[] {
-  if (text.length === 0) return [];
-  // Drop empty strings (a zero-length target would match everywhere) and
-  // sort by length descending so the regex alternation tries longer strings
-  // first at each position.
-  const sorted = [...targets]
-    .filter((t) => t.length > 0)
-    .sort((a, b) => b.length - a.length);
-  if (sorted.length === 0) return [];
-
-  const pattern = sorted.map(escapeRegex).join("|");
-  const re = new RegExp(pattern, "g");
-  const matches: RedactionMatch[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    matches.push({
-      start: m.index,
-      end: m.index + m[0].length,
-      matched: m[0],
-    });
-  }
-  return matches;
+  return createRedactionMatcher(targets).findMatches(text);
 }
 
 /**
@@ -68,12 +141,26 @@ export function redactParagraph(
   targets: ReadonlyArray<string>,
   placeholder: string = DEFAULT_PLACEHOLDER,
 ): string {
+  return redactParagraphWithMatcher(
+    paragraphXml,
+    createRedactionMatcher(targets),
+    placeholder,
+  );
+}
+
+export function redactParagraphWithMatcher(
+  paragraphXml: string,
+  matcher: RedactionMatcher,
+  placeholder: string = DEFAULT_PLACEHOLDER,
+): string {
+  if (matcher.isEmpty) return paragraphXml;
+
   const coalesced = coalesceParagraphRuns(paragraphXml);
   if (coalesced.runs.length === 0 || coalesced.text.length === 0) {
     return paragraphXml;
   }
 
-  const matches = findRedactionMatches(coalesced.text, targets);
+  const matches = matcher.findMatches(coalesced.text);
   if (matches.length === 0) return paragraphXml;
 
   // Materialise the per-run text from the coalesced view. We mutate this
@@ -102,42 +189,7 @@ export function redactInstrText(
   targets: ReadonlyArray<string>,
   placeholder: string = DEFAULT_PLACEHOLDER,
 ): string {
-  if (targets.length === 0) return xml;
-
-  const sorted = [...targets]
-    .filter((target) => target.length > 0)
-    .sort((a, b) => b.length - a.length);
-  if (sorted.length === 0) return xml;
-
-  let out = xml.replace(
-    /<w:instrText(?:\s[^>]*)?>([\s\S]*?)<\/w:instrText>/g,
-    (full, inner: string) => {
-      let redacted = inner;
-      for (const target of sorted) {
-        redacted = redacted.split(target).join(placeholder);
-      }
-      if (redacted === inner) return full;
-      return full.replace(inner, redacted);
-    },
-  );
-
-  out = out.replace(
-    /(<w:fldSimple\s[^>]*?w:instr=")([^"]*)("[^>]*>)/g,
-    (full, open: string, instr: string, close: string) => {
-      let redacted = instr;
-      for (const target of sorted) {
-        redacted = redacted.split(target).join(placeholder);
-        const encoded = target.replace(/"/g, "&quot;");
-        if (encoded !== target) {
-          redacted = redacted.split(encoded).join(placeholder);
-        }
-      }
-      if (redacted === instr) return full;
-      return `${open}${redacted}${close}`;
-    },
-  );
-
-  return out;
+  return createRedactionMatcher(targets).redactInstrText(xml, placeholder);
 }
 
 /**
@@ -150,6 +202,20 @@ export function redactScopeXml(
   targets: ReadonlyArray<string>,
   placeholder: string = DEFAULT_PLACEHOLDER,
 ): string {
+  return redactScopeXmlWithMatcher(
+    scopeXml,
+    createRedactionMatcher(targets),
+    placeholder,
+  );
+}
+
+export function redactScopeXmlWithMatcher(
+  scopeXml: string,
+  matcher: RedactionMatcher,
+  placeholder: string = DEFAULT_PLACEHOLDER,
+): string {
+  if (matcher.isEmpty) return scopeXml;
+
   // Match `<w:p>...</w:p>` and self-closing `<w:p/>`. The negative-lookahead
   // `(?!P)` ensures we don't accidentally match `<w:pPr>` (paragraph
   // properties) — we want a paragraph element, not a properties container.
@@ -158,11 +224,11 @@ export function redactScopeXml(
     (paragraph) => {
       // Self-closing paragraphs have no body to redact.
       if (paragraph.endsWith("/>")) return paragraph;
-      return redactParagraph(paragraph, targets, placeholder);
+      return redactParagraphWithMatcher(paragraph, matcher, placeholder);
     },
   );
 
-  return redactInstrText(afterRunRedact, targets, placeholder);
+  return matcher.redactInstrText(afterRunRedact, placeholder);
 }
 
 // ────────────────────────────────────────────────────────────────────────

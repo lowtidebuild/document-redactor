@@ -10,6 +10,7 @@ import {
 } from "./preflight-expansion.js";
 import type { ResolvedRedactionTarget } from "../selection-targets.js";
 import type { SurvivedString } from "../docx/verify.js";
+import type { Scope } from "../docx/types.js";
 
 export type FormatWarningReason =
   | "wordCount"
@@ -93,6 +94,15 @@ export function buildRepairPlan(
 ): RepairPlan {
   const byId = new Map(selectedTargets.map((target) => [target.id, target] as const));
   const extraLiterals = new Map<string, Set<string>>();
+  const extraScopes = new Map(
+    selectedTargets.map(
+      (target) =>
+        [
+          target.id,
+          new Map(target.scopes.map((scope) => [scope.path, scope] as const)),
+        ] as const,
+    ),
+  );
   const touchedScopePaths = new Set<string>();
   const relsRepairs = new Map<string, Set<string>>();
   let touchedNonBodyScope = false;
@@ -118,6 +128,9 @@ export function buildRepairPlan(
     if (item.surface === "field" || item.surface === "rels") {
       touchedFieldOrRelsSurface = true;
     }
+    if (item.surface !== "rels") {
+      addScope(extraScopes, target.id, item.scope);
+    }
     if (item.surface === "rels") {
       const relBucket = relsRepairs.get(item.scope.path) ?? new Set<string>();
       relBucket.add(literal);
@@ -127,12 +140,17 @@ export function buildRepairPlan(
 
   const targets = selectedTargets.map((target) => {
     const nextLiterals = extraLiterals.get(target.id);
-    if (nextLiterals === undefined) return target;
-    const literals = sortLongestFirstUnique(nextLiterals);
+    const nextScopes = extraScopes.get(target.id);
+    if (nextLiterals === undefined && nextScopes === undefined) return target;
+    const literals =
+      nextLiterals === undefined
+        ? target.redactionLiterals
+        : sortLongestFirstUnique(nextLiterals);
     return {
       ...target,
       redactionLiterals: literals,
       verificationLiterals: literals,
+      scopes: [...(nextScopes?.values() ?? target.scopes)],
     };
   });
 
@@ -147,6 +165,16 @@ export function buildRepairPlan(
         .map(([path, literals]) => [path, sortLongestFirstUnique(literals)]),
     ),
   };
+}
+
+function addScope(
+  scopesByTargetId: Map<string, Map<string, Scope>>,
+  targetId: string,
+  scope: Scope,
+): void {
+  const scopes = scopesByTargetId.get(targetId) ?? new Map<string, Scope>();
+  scopes.set(scope.path, scope);
+  scopesByTargetId.set(targetId, scopes);
 }
 
 export async function runGuidedRecovery(

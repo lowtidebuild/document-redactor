@@ -13,7 +13,7 @@
         <img alt="Download document-redactor.html" src="https://img.shields.io/badge/document--redactor.html-Download%20(latest)-0f766e?style=for-the-badge&logo=html5&logoColor=white" />
       </a>
       <br />
-      <sub>Single HTML · ~262 KB · open locally</sub>
+      <sub>Single HTML · ~266 KB · open locally</sub>
     </td>
     <td align="center" valign="middle">
       <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html.sha256">
@@ -53,7 +53,7 @@
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lowtidebuild/document-redactor/ci.yml?branch=main&label=CI&style=flat-square" />
   <img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-0f172a?style=flat-square" />
   <img alt="single HTML distribution" src="https://img.shields.io/badge/distribution-single%20HTML-0f172a?style=flat-square" />
-  <img alt="262 KB artifact" src="https://img.shields.io/badge/current%20build-262%20KB-166534?style=flat-square" />
+  <img alt="266 KB artifact" src="https://img.shields.io/badge/current%20build-266%20KB-166534?style=flat-square" />
   <img alt="zero network requests" src="https://img.shields.io/badge/network-0%20requests-166534?style=flat-square" />
   <img alt="rule-based engine" src="https://img.shields.io/badge/detection-rule--based-1d4ed8?style=flat-square" />
   <img alt="AI none" src="https://img.shields.io/badge/AI-none-7f1d1d?style=flat-square" />
@@ -156,8 +156,8 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>Current checked size</strong><br />
-      262 KB<br />
-      <small>268,571 bytes</small>
+      266 KB<br />
+      <small>271,869 bytes</small>
     </td>
     <td width="20%" valign="top">
       <strong>Integrity sidecar</strong><br />
@@ -169,15 +169,16 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>Automated coverage</strong><br />
-      1,700+ tests
+      1,800+ tests
     </td>
   </tr>
 </table>
 
-Current checked release artifact on April 30, 2026:
+Current checked release artifact on May 28, 2026:
 
-- `document-redactor.html` SHA-256: `363d7c93008038a6e56137ab0a43251771f8911c7d7aad6e21cd6771a6a8003a`
+- `document-redactor.html` SHA-256: `b73f08f3174b3b50675c66362669ce9cb46e67db5a5934aad9f5127f008758cb`
 - Verified locally with `shasum -a 256 -c document-redactor.html.sha256`
+- Release notes: [v1.3.0](release-notes/v1.3.0.md)
 
 ## What The Current Release Does
 
@@ -193,17 +194,17 @@ Current checked release artifact on April 30, 2026:
     </td>
     <td width="33%" valign="top">
       <strong>Verification-guided export</strong><br />
-      Re-checks the generated output, reports residual survivors clearly, and keeps warnings separate from verified-clean downloads.
+      Re-checks the generated output, deduplicates repeated literals before scanning, and keeps warnings separate from verified-clean downloads.
     </td>
   </tr>
   <tr>
     <td width="33%" valign="top">
       <strong>Inline preview</strong><br />
-      Shows the document text with selection-aware highlights so review happens in context, not in a blind list.
+      Shows the document text with indexed, selection-aware highlights so review happens in context without repeating match searches on every toggle.
     </td>
     <td width="33%" valign="top">
       <strong>OOXML leak hardening</strong><br />
-      Flattens risky field and hyperlink structures, strips comments, scrubs metadata, and normalizes redaction across split runs.
+      Flattens risky field and hyperlink structures, strips comments, scrubs metadata, and uses scoped redaction hints with full fallback for manual entries.
     </td>
     <td width="33%" valign="top">
       <strong>Manual recovery paths</strong><br />
@@ -316,7 +317,7 @@ For a detailed walkthrough, see [USAGE.md](USAGE.md). For the Korean guide, see 
 - Release output: `document-redactor.html`
 - Integrity file: `document-redactor.html.sha256`
 
-Internal phase briefs and planning notes are intentionally being removed from the public git surface going forward.
+Non-product working notes are kept out of the release artifact.
 
 ## Known Limitations
 
@@ -344,7 +345,7 @@ open dist/document-redactor.html
 Notes:
 
 - For browser QA, test the built `dist/document-redactor.html`, not the dev server.
-- The repository currently carries 1,700+ automated tests across detection, DOCX rewriting, verification, UI state, and ship gates.
+- The repository currently carries 1,800+ automated tests across detection, DOCX rewriting, verification, UI state, and ship gates.
 - `dist/` is ignored in git; releases should publish the built HTML and its `.sha256` sidecar from CI or from a verified local build.
 
 ## License

@@ -20,6 +20,11 @@ import type { Scope } from "./types.js";
 export type VerifySurfaceKind = "text" | "field" | "rels";
 const EXTERNAL_URL_TARGET_ID = "security:external-url";
 
+interface VerificationLiteralEntry {
+  readonly literal: string;
+  readonly targets: readonly ResolvedRedactionTarget[];
+}
+
 /** One sensitive string that survived in one scope. */
 export interface SurvivedString {
   /** Which reviewed target this survival corresponds to. */
@@ -62,44 +67,28 @@ export async function verifyRedaction(
   zip: JSZip,
   targets: ReadonlyArray<ResolvedRedactionTarget>,
 ): Promise<VerifyResult> {
-  const activeTargets = targets.filter(
-    (target) => target.verificationLiterals.some((literal) => literal.length > 0),
-  );
+  const literalEntries = buildVerificationLiteralEntries(targets);
   const surfaces = await collectVerifySurfaces(zip);
   const survivedByKey = new Map<string, SurvivedString>();
 
   for (const surface of surfaces.scopeTextSurfaces) {
-    for (const target of activeTargets) {
-      for (const literal of target.verificationLiterals) {
-        const count = countOccurrences(surface.text, literal);
-        if (count === 0) continue;
-        mergeSurvival(
-          survivedByKey,
-          target,
-          surface.scope,
-          "text",
-          count,
-          literal,
-        );
-      }
-    }
+    scanSurfaceForSurvivors(
+      survivedByKey,
+      literalEntries,
+      surface.text,
+      surface.scope,
+      "text",
+    );
   }
 
   for (const surface of surfaces.scopeInstrSurfaces) {
-    for (const target of activeTargets) {
-      for (const literal of target.verificationLiterals) {
-        const count = countOccurrences(surface.text, literal);
-        if (count === 0) continue;
-        mergeSurvival(
-          survivedByKey,
-          target,
-          surface.scope,
-          "field",
-          count,
-          literal,
-        );
-      }
-    }
+    scanSurfaceForSurvivors(
+      survivedByKey,
+      literalEntries,
+      surface.text,
+      surface.scope,
+      "field",
+    );
   }
 
   for (const surface of surfaces.relsTargetSurfaces) {
@@ -120,20 +109,13 @@ export async function verifyRedaction(
         surface.text,
       );
     }
-    for (const target of activeTargets) {
-      for (const literal of target.verificationLiterals) {
-        const count = countOccurrences(surface.text, literal);
-        if (count === 0) continue;
-        mergeSurvival(
-          survivedByKey,
-          target,
-          scope,
-          "rels",
-          count,
-          literal,
-        );
-      }
-    }
+    scanSurfaceForSurvivors(
+      survivedByKey,
+      literalEntries,
+      surface.text,
+      scope,
+      "rels",
+    );
   }
 
   const survived = [...survivedByKey.values()];
@@ -142,12 +124,69 @@ export async function verifyRedaction(
     isClean: survived.length === 0,
     survived,
     scopesChecked: surfaces.scopesChecked,
-    stringsTested: activeTargets.reduce(
-      (sum, target) =>
-        sum + target.verificationLiterals.filter((literal) => literal.length > 0).length,
-      0,
-    ),
+    stringsTested: literalEntries.length,
   };
+}
+
+function buildVerificationLiteralEntries(
+  targets: ReadonlyArray<ResolvedRedactionTarget>,
+): VerificationLiteralEntry[] {
+  const entries = new Map<
+    string,
+    {
+      literal: string;
+      targets: ResolvedRedactionTarget[];
+      targetIds: Set<SelectionTargetId>;
+    }
+  >();
+
+  for (const target of targets) {
+    const targetLiterals = new Set(
+      target.verificationLiterals.filter((literal) => literal.length > 0),
+    );
+    for (const literal of targetLiterals) {
+      let entry = entries.get(literal);
+      if (entry === undefined) {
+        entry = {
+          literal,
+          targets: [],
+          targetIds: new Set(),
+        };
+        entries.set(literal, entry);
+      }
+      if (entry.targetIds.has(target.id)) continue;
+      entry.targets.push(target);
+      entry.targetIds.add(target.id);
+    }
+  }
+
+  return [...entries.values()].map((entry) => ({
+    literal: entry.literal,
+    targets: entry.targets,
+  }));
+}
+
+function scanSurfaceForSurvivors(
+  survivedByKey: Map<string, SurvivedString>,
+  literalEntries: readonly VerificationLiteralEntry[],
+  text: string,
+  scope: Scope,
+  surface: VerifySurfaceKind,
+): void {
+  for (const entry of literalEntries) {
+    const count = countOccurrences(text, entry.literal);
+    if (count === 0) continue;
+    for (const target of entry.targets) {
+      mergeSurvival(
+        survivedByKey,
+        target,
+        scope,
+        surface,
+        count,
+        entry.literal,
+      );
+    }
+  }
 }
 
 /**

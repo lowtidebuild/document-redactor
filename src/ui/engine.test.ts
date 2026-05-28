@@ -585,7 +585,7 @@ describe("applyRedaction — the Apply button path", () => {
   });
 
   it("uses preflight rel-target repairs so pass 1 stays clean without a retry", async () => {
-    const email = "contact@pearlabyss.com";
+    const email = "contact@example.invalid";
     const bytes = await syntheticDocx({
       "word/document.xml": bodyWithHyperlink(email),
       "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:${email}" TargetMode="External"/></Relationships>`,
@@ -637,7 +637,7 @@ describe("applyRedaction — the Apply button path", () => {
   });
 
   it("keeps field-surface leaks out of the retry path when preflight sees them up front", async () => {
-    const email = "contact@pearlabyss.com";
+    const email = "contact@example.invalid";
     const bytes = await syntheticDocx({
       "word/document.xml": `<w:document ${W_NS}><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;mailto:${email}&quot; "><w:r><w:t>${email}</w:t></w:r></w:fldSimple></w:p></w:body></w:document>`,
     });

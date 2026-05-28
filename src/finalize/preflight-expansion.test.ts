@@ -71,7 +71,7 @@ describe("preflight-expansion", () => {
   });
 
   it("pre-computes rel-target repairs for selected survivors before pass 1", async () => {
-    const email = "contact@pearlabyss.com";
+    const email = "contact@example.invalid";
     const bytes = await syntheticDocx({
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:${email}" TargetMode="External"/></Relationships>`,
@@ -96,7 +96,7 @@ describe("preflight-expansion", () => {
   });
 
   it("can build the same plan from precomputed verify surfaces", async () => {
-    const email = "contact@pearlabyss.com";
+    const email = "contact@example.invalid";
     const bytes = await syntheticDocx({
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="hyperlink" Target="mailto:${email}" TargetMode="External"/></Relationships>`,
@@ -111,7 +111,7 @@ describe("preflight-expansion", () => {
   });
 
   it("records field-surface matches for selected targets without inventing new ones", async () => {
-    const selected = "contact@pearlabyss.com";
+    const selected = "contact@example.invalid";
     const unselected = "legal@sunrise.com";
     const bytes = await syntheticDocx({
       "word/document.xml": `<w:document ${W_NS}><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;mailto:${selected}&quot; ">` +
@@ -123,8 +123,14 @@ describe("preflight-expansion", () => {
       bytes,
       buildResolvedTargetsFromStrings([selected]),
     );
+    const target = buildResolvedTargetsFromStrings([selected])[0]!;
 
-    expect(plan.targets).toEqual(buildResolvedTargetsFromStrings([selected]));
+    expect(plan.targets).toEqual([
+      {
+        ...target,
+        scopes: [{ kind: "body", path: "word/document.xml" }],
+      },
+    ]);
     expect(plan.relsRepairs.size).toBe(0);
     expect(plan.summary).toEqual({
       touchedScopePaths: ["word/document.xml"],
@@ -158,7 +164,7 @@ describe("preflight-expansion", () => {
   });
 
   it("tracks mixed non-body and rels touches in the preflight summary", async () => {
-    const email = "contact@pearlabyss.com";
+    const email = "contact@example.invalid";
     const bytes = await syntheticDocx({
       "word/document.xml": bodyWith("[REDACTED]"),
       "word/header1.xml": `<w:hdr ${W_NS}><w:p><w:fldSimple w:instr=" HYPERLINK &quot;mailto:${email}&quot; "><w:r><w:t>${email}</w:t></w:r></w:fldSimple></w:p></w:hdr>`,
@@ -169,7 +175,12 @@ describe("preflight-expansion", () => {
       bytes,
       buildResolvedTargetsFromStrings([email]),
     );
+    const target = buildResolvedTargetsFromStrings([email])[0]!;
 
+    expect(plan.targets[0]).toEqual({
+      ...target,
+      scopes: [{ kind: "header", path: "word/header1.xml" }],
+    });
     expect(plan.summary).toEqual({
       touchedScopePaths: ["word/_rels/header1.xml.rels", "word/header1.xml"],
       touchedNonBodyScope: true,
