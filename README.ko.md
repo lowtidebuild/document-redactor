@@ -13,7 +13,7 @@
         <img alt="document-redactor.html 다운로드" src="https://img.shields.io/badge/document--redactor.html-%EC%B5%9C%EC%8B%A0%20%EB%B0%9B%EA%B8%B0-0f766e?style=for-the-badge&logo=html5&logoColor=white" />
       </a>
       <br />
-      <sub>HTML 한 파일 · ~266 KB · 더블클릭으로 실행</sub>
+      <sub>HTML 한 파일 · 300 KB 미만 (under 300 KB) · 더블클릭으로 실행</sub>
     </td>
     <td align="center" valign="middle">
       <a href="https://github.com/lowtidebuild/document-redactor/releases/latest/download/document-redactor.html.sha256">
@@ -53,7 +53,7 @@
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lowtidebuild/document-redactor/ci.yml?branch=main&label=CI&style=flat-square" />
   <img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-0f172a?style=flat-square" />
   <img alt="single HTML distribution" src="https://img.shields.io/badge/distribution-single%20HTML-0f172a?style=flat-square" />
-  <img alt="266 KB artifact" src="https://img.shields.io/badge/current%20build-266%20KB-166534?style=flat-square" />
+  <img alt="300 KB 미만 artifact" src="https://img.shields.io/badge/current%20build-under%20300%20KB-166534?style=flat-square" />
   <img alt="zero network requests" src="https://img.shields.io/badge/network-0%20requests-166534?style=flat-square" />
   <img alt="rule-based engine" src="https://img.shields.io/badge/detection-rule--based-1d4ed8?style=flat-square" />
   <img alt="AI none" src="https://img.shields.io/badge/AI-none-7f1d1d?style=flat-square" />
@@ -155,8 +155,8 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>현재 확인된 크기</strong><br />
-      266 KB<br />
-      <small>271,869 bytes</small>
+      271,869 bytes<br />
+      <small>약 272 KB, under 300 KB</small>
     </td>
     <td width="20%" valign="top">
       <strong>무결성 sidecar</strong><br />

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
-const CURRENT_BUILD_SIZE = "266 KB";
+const CURRENT_BUILD_SIZE = "under 300 KB";
 const CURRENT_BUILD_BYTES = "271,869 bytes";
 const CURRENT_BUILD_SHA256 =
   "b73f08f3174b3b50675c66362669ce9cb46e67db5a5934aad9f5127f008758cb";
