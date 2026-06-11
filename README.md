@@ -351,5 +351,3 @@ Notes:
 ## License
 
 [Apache License 2.0](LICENSE)
-
-Built by [@lowtidebuild](https://github.com/lowtidebuild).

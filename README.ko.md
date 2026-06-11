@@ -352,5 +352,3 @@ open dist/document-redactor.html
 ## 라이선스
 
 [Apache License 2.0](LICENSE)
-
-Built by [@lowtidebuild](https://github.com/lowtidebuild).
