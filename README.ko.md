@@ -155,7 +155,7 @@ flowchart TD
     </td>
     <td width="20%" valign="top">
       <strong>현재 확인된 크기</strong><br />
-      271,869 bytes<br />
+      271,871 bytes<br />
       <small>약 272 KB, under 300 KB</small>
     </td>
     <td width="20%" valign="top">
@@ -173,9 +173,9 @@ flowchart TD
   </tr>
 </table>
 
-2026년 5월 28일 기준으로 확인한 현재 빌드:
+2026년 6월 11일 기준으로 확인한 현재 빌드:
 
-- `document-redactor.html` SHA-256: `b73f08f3174b3b50675c66362669ce9cb46e67db5a5934aad9f5127f008758cb`
+- `document-redactor.html` SHA-256: `77bc29dc45d02ab08d50a2f54c94fc6141d75fbc40399459b6c22389a45fcebc`
 - `shasum -a 256 -c document-redactor.html.sha256` 로 로컬 검증 완료
 - 릴리즈 노트: [v1.3.0](release-notes/v1.3.0.md)
 

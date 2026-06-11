@@ -1,5 +1,5 @@
 <!--
-  Minimal footer — compact version line at the bottom of the app shell.
+  Minimal footer — credit line at the bottom of the app shell.
 
   Intentionally tiny and unobtrusive. No links (keeps the app 100%
   self-contained — no clickable paths out to the network, even if
@@ -12,7 +12,7 @@
 </script>
 
 <footer class="footer">
-  Document Redactor · {APP_VERSION}
+  Built by lowtidebuild · {APP_VERSION}
 </footer>
 
 <style>

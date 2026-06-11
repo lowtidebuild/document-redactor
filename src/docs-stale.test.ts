@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const CURRENT_BUILD_SIZE = "under 300 KB";
-const CURRENT_BUILD_BYTES = "271,869 bytes";
+const CURRENT_BUILD_BYTES = "271,871 bytes";
 const CURRENT_BUILD_SHA256 =
-  "b73f08f3174b3b50675c66362669ce9cb46e67db5a5934aad9f5127f008758cb";
+  "77bc29dc45d02ab08d50a2f54c94fc6141d75fbc40399459b6c22389a45fcebc";
 
 function readDoc(relativePath: string): string {
   return fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
